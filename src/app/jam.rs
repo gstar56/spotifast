@@ -80,9 +80,14 @@ impl App {
                 self.send_jam(JamBusyKind::Joining, JamRequest::Join(link));
             }
             Action::LeaveJam => {
-                if self.jam.take().is_some() {
+                if let Some(jam) = self.jam.take() {
                     self.jam_hold = false;
-                    self.send_jam(JamBusyKind::Leaving, JamRequest::Leave);
+                    self.send_jam(
+                        JamBusyKind::Leaving,
+                        JamRequest::Leave {
+                            session_id: jam.session_id,
+                        },
+                    );
                 }
             }
             Action::EndJam => {

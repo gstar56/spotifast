@@ -376,10 +376,10 @@ hyper-proxy2 = { git = "https://github.com/crmne/hyper-proxy2", rev = "efca48113
 # This fork (gstar56/librespot, branch jam-0.17) adds Spotify Jam playback
 # on top of crmne/librespot 3ba977f: a Jam's edits continue the playing
 # stream, `set_options` modes, and a guest's own pause (src/jam.rs).
-librespot-audio = { git = "https://github.com/gstar56/librespot", rev = "72b0e06b9b59e59c5505c0b679f19409b377a166" }
-librespot-connect = { git = "https://github.com/gstar56/librespot", rev = "72b0e06b9b59e59c5505c0b679f19409b377a166" }
-librespot-core = { git = "https://github.com/gstar56/librespot", rev = "72b0e06b9b59e59c5505c0b679f19409b377a166" }
-librespot-metadata = { git = "https://github.com/gstar56/librespot", rev = "72b0e06b9b59e59c5505c0b679f19409b377a166" }
-librespot-oauth = { git = "https://github.com/gstar56/librespot", rev = "72b0e06b9b59e59c5505c0b679f19409b377a166" }
-librespot-playback = { git = "https://github.com/gstar56/librespot", rev = "72b0e06b9b59e59c5505c0b679f19409b377a166" }
-librespot-protocol = { git = "https://github.com/gstar56/librespot", rev = "72b0e06b9b59e59c5505c0b679f19409b377a166" }
+librespot-audio = { git = "https://github.com/gstar56/librespot", rev = "1522f13159733947480b0d9d5f44c1529c853741" }
+librespot-connect = { git = "https://github.com/gstar56/librespot", rev = "1522f13159733947480b0d9d5f44c1529c853741" }
+librespot-core = { git = "https://github.com/gstar56/librespot", rev = "1522f13159733947480b0d9d5f44c1529c853741" }
+librespot-metadata = { git = "https://github.com/gstar56/librespot", rev = "1522f13159733947480b0d9d5f44c1529c853741" }
+librespot-oauth = { git = "https://github.com/gstar56/librespot", rev = "1522f13159733947480b0d9d5f44c1529c853741" }
+librespot-playback = { git = "https://github.com/gstar56/librespot", rev = "1522f13159733947480b0d9d5f44c1529c853741" }
+librespot-protocol = { git = "https://github.com/gstar56/librespot", rev = "1522f13159733947480b0d9d5f44c1529c853741" }
