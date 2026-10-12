@@ -297,12 +297,17 @@ pub enum PlayerCommand {
     Load(LoadSpec),
     /// Take over the active Connect session, including its queue and position.
     Transfer,
+    /// A Jam guest pausing just for themselves (`true`), or catching back
+    /// up with the Jam where it is now (`false`).
+    JamHold(bool),
 }
 
 #[allow(clippy::large_enum_variant)]
 pub enum EngineEvent {
     State(LocalState),
     SessionEnded,
+    /// Spotify pushed a change to the Jam this device is in.
+    Jam(crate::jam::JamUpdate),
 }
 
 pub type Notify = Arc<dyn Fn(EngineEvent) + Send + Sync>;
@@ -405,6 +410,7 @@ impl Engine {
         )
         .await
         .context("unable to connect to Spotify")?;
+        watch_jam(&session, Arc::clone(&notify));
 
         {
             let mut current = state.lock().unwrap_or_else(|p| p.into_inner());
@@ -628,6 +634,7 @@ impl Engine {
                 }
             },
             PlayerCommand::Transfer => spirc.transfer(None)?,
+            PlayerCommand::JamHold(hold) => spirc.set_jam_hold(hold)?,
             PlayerCommand::Load(spec) => {
                 let playing_track = spec
                     .offset_uri
@@ -657,6 +664,44 @@ impl Engine {
         }
         Ok(())
     }
+}
+
+/// Forwards Spotify's pushes about this device's Jam. They arrive on the
+/// dealer connection Spirc registered the device on; a second connection
+/// would have a different id and hear nothing about this device's Jam.
+fn watch_jam(session: &Session, notify: Notify) {
+    use librespot_core::dealer::protocol::{Message, PayloadValue};
+    let updates =
+        session
+            .dealer()
+            .listen_for(crate::jam::SESSION_UPDATE_URI, |message: Message| {
+                Ok(match message.payload {
+                    PayloadValue::Json(json) => {
+                        serde_json::from_str::<serde_json::Value>(&json).ok()
+                    }
+                    _ => None,
+                })
+            });
+    let mut updates = match updates {
+        Ok(updates) => updates,
+        Err(error) => {
+            log::warn!("Jam updates unavailable: {error}");
+            return;
+        }
+    };
+    tokio::spawn(async move {
+        use futures_util::StreamExt as _;
+        while let Some(update) = updates.next().await {
+            if let Some(update) = update
+                .ok()
+                .flatten()
+                .as_ref()
+                .and_then(crate::jam::update_from_value)
+            {
+                notify(EngineEvent::Jam(update));
+            }
+        }
+    });
 }
 
 fn command_interrupts_audio(state: &LocalState, command: &PlayerCommand) -> bool {

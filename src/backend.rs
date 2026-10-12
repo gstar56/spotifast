@@ -701,6 +701,8 @@ pub enum Command {
     Lyrics(Box<LyricsRequest>),
     /// The account's playlist tree, folders and all, from the session.
     Rootlist,
+    /// A Spotify Jam request, over the playback session.
+    Jam(JamRequest),
     /// Internal: a rootlist read completed for this signed-in session.
     RootlistFinished {
         generation: u64,
@@ -777,6 +779,42 @@ pub enum Command {
     },
 }
 
+/// What to ask Spotify's Jam service. Every answer comes back as
+/// [`Event::Jam`] with the Jam this device is in afterwards.
+#[derive(Clone, Debug, PartialEq)]
+pub enum JamRequest {
+    /// Which Jam this device is in, if any.
+    Refresh,
+    Start,
+    /// Join from an invite link, a `spotify:socialsession:` URI or a token.
+    Join(String),
+    Leave,
+    End {
+        session_id: String,
+    },
+    RemoveMember {
+        session_id: String,
+        member_id: String,
+    },
+    /// Guests may only add songs (`true`), or control playback too.
+    QueueOnly(bool),
+    /// A guest's control, sent to the Jam instead of this player.
+    Command {
+        session_id: String,
+        command: serde_json::Value,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum JamEvent {
+    /// The Jam this device is in after a request (`None` for none).
+    Replied(Option<crate::jam::JamSession>),
+    /// Spotify pushed a change to it, which may predate a request.
+    Pushed(Option<crate::jam::JamSession>),
+    /// A request failed; the Jam is unchanged.
+    Failed(crate::jam::JamError),
+}
+
 pub struct LyricsRequest {
     /// The track the answer is for, so a stale one is ignored.
     pub uri: String,
@@ -833,6 +871,7 @@ pub enum Event {
         manual: bool,
         result: Result<Option<crate::updates::Release>, String>,
     },
+    Jam(JamEvent),
     /// Track lyrics, or `None` when unavailable.
     Lyrics {
         uri: String,
@@ -949,6 +988,8 @@ pub struct Backend {
     #[cfg(test)]
     player_commands: std::sync::Mutex<Vec<PlayerCommand>>,
     #[cfg(test)]
+    jam_requests: std::sync::Mutex<Vec<JamRequest>>,
+    #[cfg(test)]
     album_type_requests: std::sync::Mutex<Vec<Vec<String>>>,
     #[cfg(test)]
     home_episode_requests: std::sync::Mutex<Vec<(Vec<String>, u64)>>,
@@ -1042,6 +1083,8 @@ impl Backend {
             #[cfg(test)]
             player_commands: std::sync::Mutex::new(Vec::new()),
             #[cfg(test)]
+            jam_requests: std::sync::Mutex::new(Vec::new()),
+            #[cfg(test)]
             album_type_requests: std::sync::Mutex::new(Vec::new()),
             #[cfg(test)]
             home_episode_requests: std::sync::Mutex::new(Vec::new()),
@@ -1071,6 +1114,10 @@ impl Backend {
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .push(cache.clone());
+        }
+        #[cfg(test)]
+        if let Command::Jam(request) = &command {
+            self.jam_requests.lock().unwrap().push(request.clone());
         }
         #[cfg(test)]
         if let Command::StoreHomeCache(cache) = &command {
@@ -1284,6 +1331,11 @@ impl Backend {
     #[cfg(test)]
     pub(crate) fn take_queued_tracks(&self) -> Vec<String> {
         std::mem::take(&mut *self.queued_tracks.lock().unwrap())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_jam_requests(&self) -> Vec<JamRequest> {
+        std::mem::take(&mut *self.jam_requests.lock().unwrap())
     }
 
     #[cfg(test)]
@@ -2143,6 +2195,7 @@ impl Worker {
                 }
                 Command::Lyrics(request) => self.fetch_lyrics(*request),
                 Command::Rootlist => self.fetch_rootlist(),
+                Command::Jam(request) => self.jam(request),
                 Command::RootlistFinished { generation, result } => {
                     self.on_rootlist_finished(generation, result);
                 }
@@ -2854,6 +2907,14 @@ impl Worker {
                 EngineEvent::SessionEnded => {
                     let _ = commands.send(Command::Reconnect);
                 }
+                EngineEvent::Jam(update) => {
+                    let session = match update {
+                        crate::jam::JamUpdate::Session(session) => Some(session),
+                        crate::jam::JamUpdate::Ended => None,
+                    };
+                    let _ = events.send(Event::Jam(JamEvent::Pushed(session)));
+                    waker.wake();
+                }
             }
         })
     }
@@ -3187,6 +3248,8 @@ impl Worker {
                 }
                 self.engine = Some(engine);
                 self.start_rootlist();
+                // pick up a Jam this device was already in
+                self.jam(JamRequest::Refresh);
                 self.reconnects.clear();
                 self.emit(Event::Playback(LocalPlayback::Ready { device_id }));
                 self.start_album_type_lookup();
@@ -3591,6 +3654,24 @@ impl Worker {
             result,
         });
         self.start_album_type_lookup();
+    }
+
+    fn jam(&self, request: JamRequest) {
+        let Some(engine) = self.engine.clone() else {
+            self.emit(Event::Jam(JamEvent::Replied(None)));
+            return;
+        };
+        let http = self.http.client();
+        let events = self.events.clone();
+        let waker = self.waker.clone();
+        tokio::spawn(async move {
+            let event = match jam_request(&engine, http, request).await {
+                Ok(session) => JamEvent::Replied(session),
+                Err(error) => JamEvent::Failed(error),
+            };
+            let _ = events.send(Event::Jam(event));
+            waker.wake();
+        });
     }
 
     fn fetch_lyrics(&self, request: LyricsRequest) {
@@ -4590,6 +4671,47 @@ fn settle<T>(result: Result<T, session_reads::Failure>) -> Option<ApiResult<T>> 
         Err(session_reads::Failure::Retry(error)) => {
             log::debug!("session read failed: {error}; asking the Web API");
             None
+        }
+    }
+}
+
+/// Carries out a Jam request and answers with the Jam this device is in
+/// afterwards. Calls that return no Jam ask for the current one, so the
+/// shown members and settings are Spotify's, not a guess.
+async fn jam_request(
+    engine: &Engine,
+    http: Result<reqwest::Client, String>,
+    request: JamRequest,
+) -> Result<Option<crate::jam::JamSession>, crate::jam::JamError> {
+    use crate::jam;
+    let session = engine.session();
+    match request {
+        JamRequest::Refresh => jam::current(session).await,
+        JamRequest::Start => jam::start(session).await.map(Some),
+        JamRequest::Join(link) => {
+            let http = http.map_err(jam::JamError::Network)?;
+            let token = jam::resolve_join_token(&http, &link).await?;
+            jam::join(session, &token).await.map(Some)
+        }
+        JamRequest::Leave => jam::leave(session).await.map(|()| None),
+        JamRequest::End { session_id } => jam::end(session, &session_id).await.map(|()| None),
+        JamRequest::RemoveMember {
+            session_id,
+            member_id,
+        } => match jam::remove_member(session, &session_id, &member_id).await? {
+            Some(updated) => Ok(Some(updated)),
+            None => jam::current(session).await,
+        },
+        JamRequest::QueueOnly(queue_only) => {
+            jam::set_queue_only(session, queue_only).await?;
+            jam::current(session).await
+        }
+        JamRequest::Command {
+            session_id,
+            command,
+        } => {
+            jam::command(session, &session_id, command).await?;
+            jam::current(session).await
         }
     }
 }

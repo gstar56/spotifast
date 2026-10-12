@@ -1170,6 +1170,16 @@ pub enum Action {
     PauseLyricsFollow,
     RetryLyrics,
     ToggleDevicesPopup,
+    /// Spotify Jam: the popup, and what it asks of Spotify.
+    ToggleJamPopup,
+    StartJam,
+    /// Join from an invite link, a `spotify:socialsession:` URI or a token.
+    JoinJam(String),
+    LeaveJam,
+    EndJam,
+    RemoveJamMember(String),
+    SetJamQueueOnly(bool),
+    CopyJamLink,
     /// Ask GitHub for the latest release and report the result to the user.
     CheckForUpdates,
     ShowUpdate,

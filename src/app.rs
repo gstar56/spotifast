@@ -468,6 +468,15 @@ pub struct App {
     /// positioned itself at all for this track.
     pub lyrics_line_shown: Option<Option<usize>>,
     pub show_devices: bool,
+    /// The Spotify Jam this device is in, as Spotify last said.
+    pub jam: Option<crate::jam::JamSession>,
+    /// A Jam request on its way, shown while it lasts.
+    pub jam_busy: Option<jam::JamBusy>,
+    pub show_jam: bool,
+    /// The invite link typed or pasted into the Jam popup.
+    pub jam_link: String,
+    /// A Jam guest paused just for themselves.
+    pub jam_hold: bool,
     pub toasts: Vec<Toast>,
     pub actions: Vec<Action>,
     volume_before_mute: Option<u8>,
@@ -930,6 +939,11 @@ impl App {
             lyrics_following: true,
             lyrics_line_shown: None,
             show_devices: false,
+            jam: None,
+            jam_busy: None,
+            show_jam: false,
+            jam_link: String::new(),
+            jam_hold: false,
             toasts: Vec::new(),
             actions: Vec::new(),
             volume_before_mute: None,
@@ -1980,6 +1994,7 @@ impl App {
                     }
                     Err(error) => log::warn!("rootlist unavailable: {error}"),
                 },
+                Event::Jam(event) => self.handle_jam(event),
                 Event::Lyrics { uri, result } => {
                     if self.lyrics_uri.as_deref() == Some(uri.as_str()) {
                         self.lyrics = match result {
@@ -2174,9 +2189,11 @@ impl App {
             LocalPlayback::Unavailable => {
                 self.local_ready = false;
                 self.local_device_id = None;
+                self.forget_jam();
             }
             LocalPlayback::Failed(message) => {
                 self.local_ready = false;
+                self.forget_jam();
                 if self.queued_play.take().is_some() {
                     self.clear_play_pending();
                     self.intent_track = None;
@@ -7022,6 +7039,13 @@ impl App {
                 self.pending_link = None;
                 self.backend.api(ApiRequest::Episode { id });
             }
+            Some("socialsession") => {
+                // A Jam invite: offer to join, rather than joining at once
+                self.pending_link = None;
+                self.jam_link = uri;
+                self.show_jam = true;
+                self.show_devices = false;
+            }
             _ => {
                 self.pending_link = None;
                 self.toast_error(gettext(
@@ -7888,6 +7912,9 @@ impl App {
     }
 
     fn toggle_play(&mut self) {
+        if self.jam_guest_toggle() {
+            return;
+        }
         let playing = self.now_playing().map(|now| now.playing);
         match self.target() {
             Target::Local => {
@@ -8381,6 +8408,11 @@ impl App {
         // Queue tracks and episodes directly on the active local engine.
         // Other targets and item types use the Web API.
         let track_like = uri.starts_with("spotify:track:") || uri.starts_with("spotify:episode:");
+        // A Jam guest's songs go to the Jam's queue, which everyone shares.
+        if track_like && self.jam_guest_command(crate::jam::commands::add_to_queue(&uri)) {
+            self.queue_recheck_at = Some(Instant::now() + QUEUE_RECHECK);
+            return;
+        }
         if track_like && self.local.is_active() && matches!(self.target(), Target::Local) {
             self.backend.player(PlayerCommand::AddToQueue(uri));
             self.queue_recheck_at = Some(Instant::now() + QUEUE_RECHECK);
@@ -9068,6 +9100,10 @@ impl App {
             Action::Next if self.resume_only() => {
                 self.step_resume(true);
             }
+            Action::Next if self.jam_guest_session().is_some() => {
+                self.pop_queue_head();
+                self.jam_guest_command(crate::jam::commands::skip_next());
+            }
             Action::Next => {
                 // Move the queue head to the playing row immediately. Do not
                 // pop when there is no active playback target.
@@ -9089,6 +9125,10 @@ impl App {
                 } else {
                     self.step_resume(false);
                 }
+            }
+            Action::Previous if self.jam_guest_session().is_some() => {
+                self.intent_track = None;
+                self.jam_guest_command(crate::jam::commands::skip_prev());
             }
             Action::Previous => {
                 // Next names its expected destination so the row moves before
@@ -9697,9 +9737,18 @@ impl App {
             }
             Action::PauseLyricsFollow => self.lyrics_following = false,
             Action::RetryLyrics => self.request_lyrics(),
+            Action::ToggleJamPopup
+            | Action::StartJam
+            | Action::JoinJam(_)
+            | Action::LeaveJam
+            | Action::EndJam
+            | Action::RemoveJamMember(_)
+            | Action::SetJamQueueOnly(_)
+            | Action::CopyJamLink => self.apply_jam_action(action, ctx),
             Action::ToggleDevicesPopup => {
                 self.show_devices = !self.show_devices;
                 if self.show_devices {
+                    self.show_jam = false;
                     self.refresh_devices();
                     // Receivers waiting on the network are invisible to the
                     // Web API, so look for them ourselves.
@@ -11337,7 +11386,10 @@ fn cover_error(locale: Locale, error: &crate::api::client::ApiError) -> String {
     }
 }
 
+mod jam;
 mod radio;
+
+pub use jam::{JamBusy, JamBusyKind};
 
 #[cfg(test)]
 mod tests {
@@ -19173,6 +19225,155 @@ mod tests {
         );
         app.local_ready = true;
         app
+    }
+
+    fn jam(is_host: bool) -> crate::jam::JamSession {
+        crate::jam::JamSession {
+            session_id: "jam1".into(),
+            join_token: Some("tok".into()),
+            is_host,
+            members: vec![crate::jam::JamMember {
+                id: "host".into(),
+                name: "Host".into(),
+                image_url: None,
+                is_host: true,
+                is_listening: true,
+                is_current_user: is_host,
+            }],
+            queue_only_mode: false,
+            host_device_id: None,
+            host_device_name: None,
+        }
+    }
+
+    fn jam_app(is_host: bool) -> App {
+        let mut app = headless_app();
+        app.local.track = Some(crate::player::LocalTrack {
+            uri: "spotify:track:a".into(),
+            ..Default::default()
+        });
+        app.local.playback = Playback::Playing;
+        app.jam = Some(jam(is_host));
+        app
+    }
+
+    fn jam_command_endpoint(request: &crate::backend::JamRequest) -> Option<&str> {
+        match request {
+            crate::backend::JamRequest::Command { command, .. } => command["endpoint"].as_str(),
+            _ => None,
+        }
+    }
+
+    /// A Jam guest's skip and queued song go to the Jam, which everyone
+    /// shares, and never to this player alone.
+    #[test]
+    fn a_jam_guests_skip_and_queued_song_go_to_the_jam() {
+        let ctx = egui::Context::default();
+        let mut app = jam_app(false);
+        app.apply(Action::Next, &ctx);
+        app.apply(
+            Action::AddToQueue {
+                uri: "spotify:track:q".into(),
+                label: "Queued".into(),
+            },
+            &ctx,
+        );
+        let sent: Vec<_> = app
+            .backend
+            .take_jam_requests()
+            .iter()
+            .filter_map(|request| jam_command_endpoint(request).map(str::to_owned))
+            .collect();
+        assert_eq!(sent, ["skip_next", "add_to_queue"]);
+        let player = app.backend.take_player_commands();
+        assert!(!player.contains(&PlayerCommand::Next), "{player:?}");
+        assert!(app.backend.take_queued_tracks().is_empty());
+    }
+
+    /// The host's player is the Jam's player, so their controls stay local.
+    #[test]
+    fn a_jam_hosts_controls_stay_on_this_player() {
+        let ctx = egui::Context::default();
+        let mut app = jam_app(true);
+        app.apply(Action::Next, &ctx);
+        app.apply(Action::TogglePlay, &ctx);
+        assert!(app.backend.take_jam_requests().is_empty());
+        let player = app.backend.take_player_commands();
+        assert!(player.contains(&PlayerCommand::Next), "{player:?}");
+        assert!(player.contains(&PlayerCommand::Toggle), "{player:?}");
+    }
+
+    /// A guest's pause is theirs alone: it holds this device, and playing
+    /// again catches back up with the Jam.
+    #[test]
+    fn a_jam_guests_pause_holds_only_this_device() {
+        let ctx = egui::Context::default();
+        let mut app = jam_app(false);
+        app.apply(Action::TogglePlay, &ctx);
+        assert!(app.jam_hold);
+        app.local.playback = Playback::Paused;
+        app.apply(Action::TogglePlay, &ctx);
+        assert!(!app.jam_hold);
+        assert_eq!(
+            app.backend.take_player_commands(),
+            [PlayerCommand::JamHold(true), PlayerCommand::JamHold(false)]
+        );
+        assert!(app.backend.take_jam_requests().is_empty());
+    }
+
+    /// Leaving shows the Jam gone at once, and a push Spotify sent before
+    /// it heard does not bring it back.
+    #[test]
+    fn a_left_jam_stays_gone_when_an_older_push_arrives() {
+        let ctx = egui::Context::default();
+        let mut app = jam_app(false);
+        app.apply(Action::LeaveJam, &ctx);
+        assert!(app.jam.is_none());
+        assert_eq!(
+            app.backend.take_jam_requests(),
+            [crate::backend::JamRequest::Leave]
+        );
+        app.handle_jam(crate::backend::JamEvent::Pushed(Some(jam(false))));
+        assert!(app.jam.is_none(), "a stale push undid the leave");
+        app.handle_jam(crate::backend::JamEvent::Replied(None));
+        assert!(app.jam_busy().is_none());
+        // a later Jam is shown again
+        app.handle_jam(crate::backend::JamEvent::Pushed(Some(jam(false))));
+        assert!(app.jam.is_some());
+    }
+
+    /// A Jam invite opened from outside asks before joining.
+    #[test]
+    fn a_jam_invite_link_offers_to_join() {
+        let mut app = headless_app();
+        app.user = Some(User::default());
+        app.pending_link = Some("spotify:socialsession:tok123".into());
+        app.open_pending_link();
+        assert!(app.show_jam);
+        assert_eq!(app.jam_link, "spotify:socialsession:tok123");
+        assert!(app.backend.take_jam_requests().is_empty());
+        app.apply(
+            Action::JoinJam(app.jam_link.clone()),
+            &egui::Context::default(),
+        );
+        assert_eq!(
+            app.backend.take_jam_requests(),
+            [crate::backend::JamRequest::Join(
+                "spotify:socialsession:tok123".into()
+            )]
+        );
+    }
+
+    /// Without local playback this device cannot be in a Jam.
+    #[test]
+    fn losing_local_playback_forgets_the_jam() {
+        let mut app = jam_app(false);
+        app.show_jam = true;
+        app.handle_playback(LocalPlayback::Unavailable);
+        assert!(app.jam.is_none());
+        assert!(!app.show_jam);
+        app.apply(Action::StartJam, &egui::Context::default());
+        assert!(app.backend.take_jam_requests().is_empty());
     }
 
     /// Dock menu picks wait in their own queue, which the application reads

@@ -683,6 +683,35 @@ fn sample_lyrics() -> crate::lyrics::Lyrics {
     }
 }
 
+/// A Jam of four, hosted here or by a friend.
+#[cfg(feature = "demo")]
+fn demo_jam(is_host: bool) -> crate::jam::JamSession {
+    let names = ["Maya", "Jonas", "Priya", "Leo"];
+    let host = if is_host { 0 } else { 1 };
+    crate::jam::JamSession {
+        session_id: "demojam".into(),
+        join_token: Some("demo".into()),
+        is_host,
+        members: names
+            .iter()
+            .enumerate()
+            .map(|(index, name)| crate::jam::JamMember {
+                id: format!("member{index}"),
+                name: (*name).into(),
+                image_url: image(40 + index as u32)
+                    .last()
+                    .map(|image| image.url.clone()),
+                is_host: index == host,
+                is_listening: true,
+                is_current_user: index == 0,
+            })
+            .collect(),
+        queue_only_mode: false,
+        host_device_id: None,
+        host_device_name: None,
+    }
+}
+
 /// Applies `--demo-page` and `--demo-show`.
 /// Makes the displayed song this computer's playback, with that song's own
 /// metadata, so the player bar draws the same as without it.
@@ -903,6 +932,15 @@ pub fn apply_flags(app: &mut App, page: Option<&str>, show: Option<&str>) {
                 }
             }
             "devices" => app.show_devices = true,
+            "jam" => {
+                play_here(app);
+                app.show_jam = true;
+            }
+            "jam-host" | "jam-guest" => {
+                play_here(app);
+                app.jam = Some(demo_jam(surface == "jam-host"));
+                app.show_jam = true;
+            }
             "sonos-idle" => sonos_devices(app, false),
             "sonos-active" => sonos_devices(app, true),
             // These paired states capture both outcomes of the collection

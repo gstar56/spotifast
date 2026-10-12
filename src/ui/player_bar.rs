@@ -875,6 +875,30 @@ fn extras(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>) {
         ));
     }
     ui.add_space(4.0);
+    if app.jam_available() || app.jam.is_some() {
+        let in_jam = app.jam.is_some();
+        let jam = theme::icon_button(
+            ui,
+            Icon::Users,
+            18.0,
+            if in_jam {
+                palette.accent
+            } else {
+                palette.secondary
+            },
+            palette.text,
+            &if in_jam {
+                gettext(app.locale, "Jam")
+            } else {
+                gettext(app.locale, "Start or join a Jam")
+            },
+        );
+        ui.ctx()
+            .data_mut(|data| data.insert_temp(egui::Id::new(super::jam::BUTTON_RECT_ID), jam.rect));
+        if jam.clicked() {
+            app.actions.push(Action::ToggleJamPopup);
+        }
+    }
     let remote = now.is_some_and(|now| !now.local);
     let devices = theme::icon_button(
         ui,

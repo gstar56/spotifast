@@ -7,6 +7,7 @@ src/ui/widgets.rs
 src/app.rs
 src/ui/settings.rs
 src/api/models.rs
+src/app/jam.rs
 src/app/radio.rs
 src/milkdrop.rs
 src/model.rs
@@ -17,6 +18,7 @@ src/ui/collection.rs
 src/ui/devices.rs
 src/ui/dialogs.rs
 src/ui/home.rs
+src/ui/jam.rs
 src/ui/keys.rs
 src/ui/library.rs
 src/ui/login.rs

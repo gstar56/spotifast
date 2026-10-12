@@ -73,6 +73,9 @@ clients. Spotifast uses its session for:
   track details, with the shared Web API as fallback when the session cannot
   supply them. This uses librespot's existing metadata support.
 - **Display names** for the user IDs attached to songs in a playlist.
+- **Spotify Jam:** starting, joining, leaving and managing one, through the
+  private `social-connect` service Spotify's own apps use. Its playback needs
+  this fork's librespot patches.
 - **Precise EP types** for releases that the Web API groups with singles.
 - **Radio and autoplay** through Spotify's context resolver: stations seeded
   by a song, playlist, album, or artist. Each resolution is a fresh mix of 50
@@ -108,8 +111,10 @@ The Web API and librespot do not provide these features:
   support its protocol. Spotifast's pins are local and are stored in
   `settings.json`. See [issue #31](https://github.com/crmne/spotifast/issues/31).
 - **Editing playlist folders.** librespot can only read them.
-- **Smart Shuffle, Jam, Blend, and similar Spotify features.** Spotify
+- **Smart Shuffle, Blend, and similar Spotify features.** Spotify
   generates these for its own clients. Spotifast only has plain shuffle.
+  Jam is the exception in this fork: it runs over the librespot session's
+  `social-connect` service. See [How It Connects](/how-it-connects/#spotify-jam).
   A Blend that a Spotify app already made opens like any playlist, with
   who added each song, but Spotifast cannot start or manage one.
 - **Lossless audio.** librespot does not receive lossless streams. Spotifast

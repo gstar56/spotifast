@@ -359,6 +359,39 @@ credential. Spotifast does not send a login blob or access token to that HTTP
 endpoint. Transfer and player commands go through Spotify using the existing
 playback session. Other receivers keep the encrypted login blob described above.
 
+## Spotify Jam
+
+A Jam is a listening session other people join with a link. Spotify has no Web
+API for it, so Spotifast uses `social-connect`, the private service Spotify's
+own apps use, over the playback session: librespot adds the bearer and client
+token Spotify issues its own desktop client. A token for a registered Web API
+app is refused there whatever its scopes. Calls go to Spotify's `spclient`
+host:
+
+| Action | Request |
+|---|---|
+| Find this device's Jam | `GET /social-connect/v2/sessions/current` |
+| Start one | `GET /social-connect/v2/sessions/current_or_new?activate=true` |
+| Join one | `POST /social-connect/v2/sessions/join/<invite token>` |
+| Leave | `POST /social-connect/v2/sessions/leave` |
+| End one you host | `DELETE /social-connect/v3/sessions/<id>` |
+| Remove someone | `POST /social-connect/v3/sessions/<id>/member/<member>/kick` |
+| Let guests control playback | `PUT /social-connect/v2/sessions/current/queue_only_mode/disabled` |
+| A guest's skip or queued song | `POST /social-connect/v2/sessions/<id>/commands/from/<device>` |
+
+Spotify binds a Jam to a Connect device, so each call names this computer's
+device and the dealer connection it registered on (`Spotify-Connection-Id`),
+and a Jam needs local playback. Changes arrive on that same connection as
+`social-connect/v2/session_update` pushes. A `spotify.link` short link is
+followed, without credentials, to the `open.spotify.com/socialsession/` address
+it points at. The invite token is never logged.
+
+Spotify then drives each device in the Jam as an ordinary Connect controller.
+Every change anyone makes reaches the playing device as a transfer of the
+whole Jam, so Spotifast's librespot fork continues the playing stream instead
+of loading the song again, and tracks the Jam's position so a guest's own
+pause can catch back up.
+
 ## The engine
 
 Playback runs on a separate runtime. Librespot maintains the Spotify Connect

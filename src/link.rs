@@ -6,8 +6,17 @@
 //! `spotify:<kind>:<id>` or `spotify:search:<encoded query>`, or nothing
 //! when it is not something the app can open.
 
-/// Resource pages. Search links carry text instead of a resource id.
-const KINDS: [&str; 6] = ["track", "album", "artist", "playlist", "show", "episode"];
+/// Resource pages, and a Spotify Jam's invite. Search links carry text
+/// instead of a resource id.
+const KINDS: [&str; 7] = [
+    "track",
+    "album",
+    "artist",
+    "playlist",
+    "show",
+    "episode",
+    "socialsession",
+];
 
 /// The canonical form of a context URI Spotify reports as playing.
 /// Personalized playlists report their context with the owner embedded,
@@ -27,7 +36,8 @@ pub fn canonical_context_uri(uri: &str) -> String {
 }
 
 /// The canonical `spotify:<kind>:<id>` behind `text`, or `None` when it is
-/// not a link to a track, album, artist, playlist, show, episode, or search.
+/// not a link to a track, album, artist, playlist, show, episode, Jam
+/// invite, or search.
 ///
 /// Accepted: `spotify:track:ID`, the old `spotify:user:NAME:playlist:ID`,
 /// `spotify://track/ID`, and `https://open.spotify.com/track/ID` with or
@@ -184,6 +194,14 @@ mod tests {
             (
                 "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC",
                 "spotify:track:4uLU6hMCjMI75M1A2tKUQC",
+            ),
+            (
+                "https://open.spotify.com/socialsession/2nntah4YWidehwLM4kxDyQ?si=x",
+                "spotify:socialsession:2nntah4YWidehwLM4kxDyQ",
+            ),
+            (
+                "spotify:socialsession:2nntah4YWidehwLM4kxDyQ",
+                "spotify:socialsession:2nntah4YWidehwLM4kxDyQ",
             ),
             (
                 "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC?si=abc123&nd=1",
