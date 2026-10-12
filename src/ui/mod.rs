@@ -8,6 +8,7 @@ pub(crate) mod devices;
 mod dialogs;
 pub(crate) mod friends;
 pub mod home;
+mod jam;
 mod keys;
 pub mod library;
 pub mod login;
@@ -111,6 +112,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     }
     keep_room_for_panels(app, ctx);
     devices::popup(app, ctx);
+    jam::popup(app, ctx);
     dialogs::show(app, ctx);
     update::show(app, ctx);
     widgets::drag_ghost(ctx, &app.palette, app.locale);
