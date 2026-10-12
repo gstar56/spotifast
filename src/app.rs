@@ -19331,7 +19331,9 @@ mod tests {
         assert!(app.jam.is_none());
         assert_eq!(
             app.backend.take_jam_requests(),
-            [crate::backend::JamRequest::Leave]
+            [crate::backend::JamRequest::Leave {
+                session_id: "jam1".into()
+            }]
         );
         app.handle_jam(crate::backend::JamEvent::Pushed(Some(jam(false))));
         assert!(app.jam.is_none(), "a stale push undid the leave");

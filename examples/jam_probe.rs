@@ -5,7 +5,7 @@
 //!   cargo run --example jam_probe -- start
 //!   cargo run --example jam_probe -- end <session id>
 //!   cargo run --example jam_probe -- join <link or token>
-//!   cargo run --example jam_probe -- leave
+//!   cargo run --example jam_probe -- leave <session id>
 //!
 //! This session registers no Connect device, so a Jam started or joined
 //! here has nowhere to play; use it to check the requests, not to listen.
@@ -57,7 +57,7 @@ fn main() -> anyhow::Result<()> {
                 let token = jam::resolve_join_token(&client, &required()?).await?;
                 println!("{:#?}", jam::join(&session, &token).await);
             }
-            "leave" => println!("{:?}", jam::leave(&session).await),
+            "leave" => println!("{:?}", jam::leave(&session, &required()?).await),
             other => anyhow::bail!("unknown action {other}"),
         }
         anyhow::Ok(())

@@ -185,49 +185,106 @@ pub fn update_from_value(value: &Value) -> Option<JamUpdate> {
     session_from_value(value.get("session")?).map(JamUpdate::Session)
 }
 
-/// The join token in a share link, a `spotify:socialsession:` URI, or a bare
+/// The join token in a share link (`open.spotify.com/socialsession/…` or
+/// `open.spotify.com/jam/…`), a `spotify:socialsession:` URI, or a bare
 /// token. A `spotify.link` short link is not one; [`resolve_join_token`]
 /// follows it first.
 pub fn join_token_in(text: &str) -> Option<String> {
     let text = text.trim();
-    let token = match text.find("socialsession") {
-        Some(at) => {
-            let rest = &text[at + "socialsession".len()..];
-            let rest = rest
-                .strip_prefix("%3A")
-                .or_else(|| rest.strip_prefix("%3a"))
-                .or_else(|| rest.strip_prefix([':', '/']))?;
-            rest.split(['/', '?', '#', '&', '%']).next()?
-        }
+    let marked = candidates(text).find_map(|rest| {
+        rest.split(['/', '?', '#', '&', '%', '"', '\'', '<', ' ', ','])
+            .next()
+            .filter(|token| is_token(token))
+    });
+    if let Some(token) = marked {
+        return Some(token.to_owned());
+    }
+    let token = if text.contains("/sessions/join/") {
         // the join path of the internal address
-        None if text.contains("/sessions/join/") => text.rsplit('/').next()?,
-        None if text.contains(['/', ':', '.', ' ']) => return None,
-        None => text,
+        text.rsplit('/').next()?
+    } else if text.contains(['/', ':', '.', ' ', '"']) {
+        return None;
+    } else {
+        text
     };
-    let valid = !token.is_empty()
-        && token
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_');
-    valid.then(|| token.to_owned())
+    is_token(token).then(|| token.to_owned())
 }
 
-fn is_short_link(text: &str) -> bool {
+fn is_token(token: &str) -> bool {
+    !token.is_empty()
+        && token
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+}
+
+/// What follows each part of the text that names a Jam invite. A redirect
+/// page names `socialsession` in other places too (`"app_destination":
+/// "socialsession"`), so every mention is a candidate, in order.
+fn candidates(text: &str) -> impl Iterator<Item = &str> {
+    let social = text
+        .match_indices("socialsession")
+        .filter_map(|(at, marker)| {
+            let rest = &text[at + marker.len()..];
+            rest.strip_prefix("%3A")
+                .or_else(|| rest.strip_prefix("%3a"))
+                .or_else(|| rest.strip_prefix("%2F"))
+                .or_else(|| rest.strip_prefix("%2f"))
+                .or_else(|| rest.strip_prefix([':', '/']))
+        });
+    let jam = [
+        "/jam/",
+        ":jam:",
+        "%3Ajam%3A",
+        "%3ajam%3a",
+        "%2Fjam%2F",
+        "%2fjam%2f",
+    ]
+    .into_iter()
+    .flat_map(move |marker| {
+        text.match_indices(marker)
+            .map(move |(at, _)| &text[at + marker.len()..])
+    });
+    social.chain(jam)
+}
+
+/// A Spotify web link that may lead to a Jam once followed: a `spotify.link`
+/// short link, or another Spotify address that redirects to one.
+fn is_followable(text: &str) -> bool {
     let text = text.trim();
-    let host = text
+    let rest = text
         .strip_prefix("https://")
         .or_else(|| text.strip_prefix("http://"))
         .unwrap_or(text);
-    host.starts_with("spotify.link/") || host.starts_with("spotify.app.link/")
+    let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    host == "spotify.link"
+        || host == "spotify.app.link"
+        || host == "spotify.com"
+        || host.ends_with(".spotify.com")
+}
+
+/// The outline of a link for the log: its host and path, with anything long
+/// enough to be a token hidden.
+fn link_shape(text: &str) -> String {
+    let text = text.trim();
+    let (scheme, rest) = text.split_once("://").unwrap_or(("", text));
+    let rest = rest.split(['?', '#']).next().unwrap_or_default();
+    let mut parts = rest.split('/');
+    let host = parts.next().unwrap_or_default();
+    let path: Vec<&str> = parts
+        .map(|part| if part.len() > 8 { "<…>" } else { part })
+        .collect();
+    format!("{scheme}://{host}/{}", path.join("/"))
 }
 
 /// The join token for anything a person might paste. A `spotify.link` short
 /// link (what Spotify's share sheet hands out) is followed, without
-/// credentials, to the `socialsession` address it redirects to.
+/// credentials, to the Jam address it redirects to.
 pub async fn resolve_join_token(client: &reqwest::Client, link: &str) -> Result<String, JamError> {
     if let Some(token) = join_token_in(link) {
         return Ok(token);
     }
-    if !is_short_link(link) {
+    if !is_followable(link) {
+        log::warn!("not a Jam link: {}", link_shape(link));
         return Err(JamError::BadLink);
     }
     let url = if link.trim().starts_with("http") {
@@ -235,17 +292,50 @@ pub async fn resolve_join_token(client: &reqwest::Client, link: &str) -> Result<
     } else {
         format!("https://{}", link.trim())
     };
+    // Short links answer a desktop browser with a plain redirect to the
+    // web address; other clients may get a page that only scripts redirect.
     let response = client
         .get(&url)
+        .header(
+            reqwest::header::USER_AGENT,
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0 Safari/537.36",
+        )
         .send()
         .await
         .map_err(|error| JamError::Network(error.without_url().to_string()))?;
-    if let Some(token) = join_token_in(response.url().as_str()) {
+    let landed = response.url().to_string();
+    if let Some(token) = join_token_in(&landed) {
         return Ok(token);
     }
-    // some short links land on a page that names the target instead
+    // some links land on a page that names the Jam instead, often inside
+    // escaped JSON or a percent-encoded fallback address
     let body = response.text().await.unwrap_or_default();
-    join_token_in(&body).ok_or(JamError::BadLink)
+    let page = unescape_page(&body);
+    join_token_in(&page).ok_or_else(|| {
+        log::warn!(
+            "no Jam behind {} (landed on {}; page of {} bytes, mentions socialsession: {}, jam: {})",
+            link_shape(link),
+            link_shape(&landed),
+            body.len(),
+            page.contains("socialsession"),
+            page.contains("/jam/") || page.contains(":jam:"),
+        );
+        JamError::BadLink
+    })
+}
+
+/// A page's text with the escapes a redirect page hides an address behind
+/// undone: JSON's `\/`, HTML's slash entities, and percent-encoding.
+fn unescape_page(body: &str) -> String {
+    let body = body
+        .replace("\\/", "/")
+        .replace("&#x2F;", "/")
+        .replace("&#x2f;", "/")
+        .replace("&#47;", "/")
+        .replace("&amp;", "&");
+    percent_encoding::percent_decode_str(&body)
+        .decode_utf8_lossy()
+        .into_owned()
 }
 
 /// One social-connect call, made the way the official client makes it: as
@@ -362,14 +452,30 @@ pub async fn join(session: &Session, token: &str) -> Result<JamSession, JamError
 }
 
 /// Leaves the Jam this device is in, as a guest.
-pub async fn leave(session: &Session) -> Result<(), JamError> {
-    let endpoint = format!(
-        "/social-connect/v2/sessions/leave?local_device_id={}",
-        session.device_id()
-    );
-    match call(session, Method::POST, &endpoint).await {
-        Ok(_) | Err(JamError::NotFound) => Ok(()),
-        Err(error) => Err(error),
+///
+/// Spotify refuses the old device-wide `v2/sessions/leave` with 405, so
+/// the session's own leave path goes first; the others are tried in turn.
+pub async fn leave(session: &Session, session_id: &str) -> Result<(), JamError> {
+    let id = path_safe(session_id)?;
+    let attempts = [
+        format!("/social-connect/v3/sessions/{id}/leave"),
+        format!("/social-connect/v2/sessions/{id}/leave"),
+        format!(
+            "/social-connect/v2/sessions/leave?local_device_id={}",
+            session.device_id()
+        ),
+    ];
+    let mut last = JamError::NotFound;
+    for endpoint in &attempts {
+        match call(session, Method::POST, endpoint).await {
+            Ok(_) => return Ok(()),
+            Err(error) => last = error,
+        }
+    }
+    match last {
+        // nothing left to leave
+        JamError::NotFound => Ok(()),
+        error => Err(error),
     }
 }
 
@@ -544,6 +650,10 @@ mod tests {
             "spotify:socialsession:AbC123",
             "https://x/?u=spotify%3Asocialsession%3AAbC123&y",
             "hm://social-connect/v2/sessions/join/AbC123",
+            "https://open.spotify.com/jam/AbC123?si=x",
+            "https://open.spotify.com/intl-fr/jam/AbC123",
+            "spotify:jam:AbC123",
+            "<meta content=\"spotify:socialsession:AbC123\">",
             "  AbC123 ",
         ] {
             assert_eq!(join_token_in(link).as_deref(), Some("AbC123"), "{link}");
@@ -561,9 +671,36 @@ mod tests {
         ] {
             assert_eq!(join_token_in(link), None, "{link}");
         }
-        assert!(is_short_link("https://spotify.link/a1b2c3"));
-        assert!(is_short_link("spotify.link/a1b2c3"));
-        assert!(!is_short_link("https://open.spotify.com/socialsession/x"));
+        assert!(is_followable("https://spotify.link/a1b2c3"));
+        assert!(is_followable("spotify.link/a1b2c3"));
+        assert!(is_followable("https://open.spotify.com/something/else"));
+        assert!(!is_followable("https://example.com/socialsession"));
+        assert!(!is_followable("https://notspotify.com/x"));
+    }
+
+    #[test]
+    fn a_redirect_page_gives_up_its_jam() {
+        for page in [
+            r#"{"$desktop_url":"https:\/\/open.spotify.com\/socialsession\/AbC123"}"#,
+            "<a href=\"https:&#x2F;&#x2F;open.spotify.com&#x2F;socialsession&#x2F;AbC123\">",
+            "?$fallback_url=https%3A%2F%2Fopen.spotify.com%2Fsocialsession%2FAbC123%3Fsi%3Dx",
+            r#"window.location = "spotify:\/\/socialsession\/AbC123";"#,
+            r#"{"app_destination":"socialsession","$desktop_url":"https:\/\/open.spotify.com\/socialsession\/AbC123"}"#,
+        ] {
+            assert_eq!(
+                join_token_in(&unescape_page(page)).as_deref(),
+                Some("AbC123"),
+                "{page}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_rejected_link_is_logged_without_its_token() {
+        assert_eq!(
+            link_shape("https://open.spotify.com/xyz/AbCdEfGh123?si=secret"),
+            "https://open.spotify.com/xyz/<…>"
+        );
     }
 
     #[test]

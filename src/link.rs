@@ -86,7 +86,11 @@ pub fn parse(text: &str) -> Option<String> {
     let [kind, id, ..] = segments.as_slice() else {
         return None;
     };
-    let kind = kind.to_ascii_lowercase();
+    let mut kind = kind.to_ascii_lowercase();
+    // Jam invites are also handed out as open.spotify.com/jam/<token>.
+    if kind == "jam" {
+        kind = "socialsession".into();
+    }
     if !KINDS.contains(&kind.as_str()) || !is_id(id) {
         return None;
     }
@@ -201,6 +205,10 @@ mod tests {
             ),
             (
                 "spotify:socialsession:2nntah4YWidehwLM4kxDyQ",
+                "spotify:socialsession:2nntah4YWidehwLM4kxDyQ",
+            ),
+            (
+                "https://open.spotify.com/jam/2nntah4YWidehwLM4kxDyQ",
                 "spotify:socialsession:2nntah4YWidehwLM4kxDyQ",
             ),
             (

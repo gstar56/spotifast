@@ -788,7 +788,9 @@ pub enum JamRequest {
     Start,
     /// Join from an invite link, a `spotify:socialsession:` URI or a token.
     Join(String),
-    Leave,
+    Leave {
+        session_id: String,
+    },
     End {
         session_id: String,
     },
@@ -4693,7 +4695,7 @@ async fn jam_request(
             let token = jam::resolve_join_token(&http, &link).await?;
             jam::join(session, &token).await.map(Some)
         }
-        JamRequest::Leave => jam::leave(session).await.map(|()| None),
+        JamRequest::Leave { session_id } => jam::leave(session, &session_id).await.map(|()| None),
         JamRequest::End { session_id } => jam::end(session, &session_id).await.map(|()| None),
         JamRequest::RemoveMember {
             session_id,
