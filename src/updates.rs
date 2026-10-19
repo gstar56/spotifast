@@ -22,15 +22,18 @@ pub const CONFIG: UpdateConfig = UpdateConfig {
         executable_names: &["Spotifast"],
         legacy_bundle_names: &[],
     },
-    // Releases publish an Ed25519 signature for checksums.txt. Require it
-    // before downloading an update, using the release workflow's public key.
-    publisher_key: Some(include_str!("../assets/update-public-key.hex")),
+    // This fork's releases are checked against checksums.txt alone: they
+    // are built and published from Windows (packaging/windows/fork-release.ps1),
+    // without the key upstream's release workflow signs with.
+    publisher_key: None,
     // Releases build their AppImages before publishing, so the signed
     // checksums.txt lists them (#737): an AppImage replaces itself with the
     // next one.
     appimage: true,
+    // This fork's own releases: upstream's would replace it with a build
+    // without Jam.
     ..UpdateConfig::new(
-        "crmne/spotifast",
+        "gstar56/spotifast",
         "Spotifast",
         "spotifast",
         env!("CARGO_PKG_VERSION"),
@@ -140,12 +143,13 @@ mod tests {
         assert_eq!(CONFIG.current_version, env!("CARGO_PKG_VERSION"));
     }
 
+    /// This fork updates from its own releases, which carry checksums.txt
+    /// but no signature: upstream's key would refuse every one of them, and
+    /// upstream's releases would replace this build with one without Jam.
     #[test]
-    fn updates_require_the_release_signing_key() {
-        assert!(
-            CONFIG.publisher_key.is_some(),
-            "updates must require a publisher signature"
-        );
+    fn updates_come_from_this_forks_unsigned_releases() {
+        assert_eq!(CONFIG.repository, "gstar56/spotifast");
+        assert!(CONFIG.publisher_key.is_none());
         CONFIG.validate().unwrap();
     }
 
