@@ -22,8 +22,10 @@ pub const CONFIG: UpdateConfig = UpdateConfig {
     // signed. Only a version shipped after the first signed release may
     // carry the key: from then on an unsigned release is refused.
     publisher_key: None,
+    // This fork's own releases: upstream's would replace it with a build
+    // without Jam.
     ..UpdateConfig::new(
-        "crmne/spotifast",
+        "gstar56/spotifast",
         "Spotifast",
         "spotifast",
         env!("CARGO_PKG_VERSION"),
