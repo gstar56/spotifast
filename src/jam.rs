@@ -16,7 +16,7 @@
 
 use librespot_core::{Error as CoreError, error::ErrorKind, session::Session};
 use reqwest::Method;
-use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
+use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde_json::{Value, json};
 
 /// Dealer topic for a Jam's live changes: members joining and leaving, the
@@ -354,6 +354,8 @@ async fn call_with_body(
 ) -> Result<Value, JamError> {
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    // Spotify's link service refuses a request that does not ask for JSON.
+    headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
     if let Ok(connection) = HeaderValue::from_str(&session.connection_id())
         && !connection.is_empty()
     {
@@ -502,6 +504,42 @@ pub async fn remove_member(
     Ok(session_from_value(
         &call(session, Method::POST, &endpoint).await?,
     ))
+}
+
+/// The `spotify.link` invite Spotify's own apps share for a Jam. Opened on
+/// another computer or phone, it offers to open the Spotify app and join;
+/// the long `open.spotify.com/socialsession/` address only opens a web page.
+/// Spotify's link service makes it from the Jam's join token.
+pub async fn invite_link(session: &Session, join_token: &str) -> Result<String, JamError> {
+    let token = path_safe(join_token)?;
+    let request = json!({
+        "spotify_uri": format!("spotify:socialsession:{token}"),
+        "custom_data": [
+            { "key": "ssp", "value": "1" },
+            { "key": "app_destination", "value": "socialsession" },
+        ],
+        "link_preview": {
+            "title": "Join my Jam on Spotify",
+            "image_url": format!("https://shareables.scdn.co/publish/socialsession/{token}"),
+        },
+        "utm_parameters": {
+            "utm_medium": "share-link",
+            "utm_source": "share-options-sheet",
+        },
+    });
+    let reply = call_with_body(
+        session,
+        Method::POST,
+        "/url-dispenser/v1/generate-url",
+        Some(&request),
+    )
+    .await?;
+    reply
+        .get("shareable_url")
+        .and_then(Value::as_str)
+        .filter(|url| url.starts_with("https://"))
+        .map(str::to_owned)
+        .ok_or_else(|| JamError::Network("no invite link in Spotify's reply".into()))
 }
 
 /// Lets guests control playback (`false`), or only add songs (`true`).
