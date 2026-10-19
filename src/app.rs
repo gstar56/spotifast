@@ -18989,6 +18989,38 @@ mod tests {
         }
     }
 
+    /// Full screen lyrics drop the window's minimum size, which the open
+    /// side panels raise past the width of a vertical or highly scaled
+    /// screen, and the panels' minimum comes back with the window (#783).
+    #[test]
+    fn full_screen_lyrics_never_ask_for_more_than_the_screen() {
+        let mut app = headless_app();
+        app.settings.sidebar_visible = true;
+        app.show_lyrics_panel = true;
+        let ctx = egui::Context::default();
+        let minimum = |app: &App| {
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                crate::ui::keep_room_for_panels(app, ui.ctx());
+            });
+            output.textures_delta.clear();
+            output.viewport_output[&egui::ViewportId::ROOT]
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    egui::ViewportCommand::MinInnerSize(size) => Some(*size),
+                    _ => None,
+                })
+        };
+        let panels = minimum(&app).expect("the panels raise the minimum");
+        assert!(panels.x > crate::window::MAIN_MIN_SIZE[0]);
+        app.lyrics_fullscreen = Some(false);
+        let full_screen = minimum(&app).expect("full screen lowers it");
+        assert!(full_screen.x <= 1.0 && full_screen.y <= 1.0);
+        assert_eq!(minimum(&app), None, "sent once, not every frame");
+        app.lyrics_fullscreen = None;
+        assert_eq!(minimum(&app), Some(panels));
+    }
+
     #[test]
     fn native_fullscreen_exit_restores_the_previous_window_mode() {
         for was_fullscreen in [false, true] {

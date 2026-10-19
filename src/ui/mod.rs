@@ -77,8 +77,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             lyrics::side_panel(app, ui);
         }
         central(app, ui);
-        keep_room_for_panels(app, ctx);
     }
+    keep_room_for_panels(app, ctx);
     devices::popup(app, ctx);
     jam::popup(app, ctx);
     dialogs::show(app, ctx);
@@ -108,26 +108,35 @@ pub(crate) const SIDEBAR_MIN_WIDTH: f32 = 210.0;
 /// so even at its narrowest the page beside the panels keeps the room its
 /// top bar needs (#624), and lower it again once they close. Window managers
 /// that tile ignore the minimum; the panels still give way there.
-fn keep_room_for_panels(app: &App, ctx: &Context) {
+///
+/// Full screen lyrics drop the minimum altogether. They open the Lyrics
+/// panel behind them, and a minimum wider than the screen, as on a vertical
+/// monitor or at a high display scale, has Windows and the full screen
+/// window resize each other every frame: the screen flashes black (#783).
+pub(crate) fn keep_room_for_panels(app: &App, ctx: &Context) {
     if crate::window::fixed_size() {
         return;
     }
-    let width = main_min_width(
-        topbar::least_width(ctx),
-        app.settings.sidebar_visible,
-        app.show_queue_panel || app.show_lyrics_panel,
-    )
-    .round();
-    let id = Id::new("main-min-width");
-    let sent = ctx.data(|data| data.get_temp::<f32>(id));
+    let minimum = if app.lyrics_fullscreen.is_some() {
+        vec2(1.0, 1.0)
+    } else {
+        vec2(
+            main_min_width(
+                topbar::least_width(ctx),
+                app.settings.sidebar_visible,
+                app.show_queue_panel || app.show_lyrics_panel,
+            )
+            .round(),
+            crate::window::MAIN_MIN_SIZE[1],
+        )
+    };
+    let id = Id::new("main-min-size");
+    let sent = ctx.data(|data| data.get_temp::<egui::Vec2>(id));
     // The window starts at MAIN_MIN_SIZE, so there is nothing to send until
     // the panels need more.
-    if sent.unwrap_or(crate::window::MAIN_MIN_SIZE[0]) != width {
-        ctx.data_mut(|data| data.insert_temp(id, width));
-        ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(vec2(
-            width,
-            crate::window::MAIN_MIN_SIZE[1],
-        )));
+    if sent.unwrap_or(crate::window::MAIN_MIN_SIZE.into()) != minimum {
+        ctx.data_mut(|data| data.insert_temp(id, minimum));
+        ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(minimum));
     }
 }
 
