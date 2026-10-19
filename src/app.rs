@@ -477,6 +477,10 @@ pub struct App {
     pub jam_link: String,
     /// A Jam guest paused just for themselves.
     pub jam_hold: bool,
+    /// The `spotify.link` invite and the join token it was made for.
+    pub jam_invite: Option<(String, String)>,
+    /// The join token an invite link was last asked for.
+    jam_invite_asked: Option<String>,
     pub toasts: Vec<Toast>,
     pub actions: Vec<Action>,
     volume_before_mute: Option<u8>,
@@ -944,6 +948,8 @@ impl App {
             show_jam: false,
             jam_link: String::new(),
             jam_hold: false,
+            jam_invite: None,
+            jam_invite_asked: None,
             toasts: Vec::new(),
             actions: Vec::new(),
             volume_before_mute: None,
@@ -19374,6 +19380,42 @@ mod tests {
         // a later Jam is shown again
         app.handle_jam(crate::backend::JamEvent::Pushed(Some(jam(false))));
         assert!(app.jam.is_some());
+    }
+
+    /// A Jam is shared by the `spotify.link` invite Spotify's apps use,
+    /// asked for once per Jam; the long web link stands in until it comes.
+    #[test]
+    fn a_jam_is_shared_by_its_short_invite_link() {
+        let mut app = headless_app();
+        app.handle_jam(crate::backend::JamEvent::Replied(Some(jam(true))));
+        app.handle_jam(crate::backend::JamEvent::Pushed(Some(jam(true))));
+        assert_eq!(
+            app.backend.take_jam_requests(),
+            [crate::backend::JamRequest::InviteLink {
+                join_token: "tok".into()
+            }],
+            "asked once for the same Jam"
+        );
+        assert_eq!(
+            app.jam_share_link().as_deref(),
+            Some("https://open.spotify.com/socialsession/tok")
+        );
+        app.handle_jam(crate::backend::JamEvent::InviteLink {
+            join_token: "tok".into(),
+            url: "https://spotify.link/abc".into(),
+        });
+        assert_eq!(
+            app.jam_share_link().as_deref(),
+            Some("https://spotify.link/abc")
+        );
+        // another Jam never shares the old Jam's invite
+        let mut other = jam(true);
+        other.join_token = Some("new".into());
+        app.handle_jam(crate::backend::JamEvent::Pushed(Some(other)));
+        assert_eq!(
+            app.jam_share_link().as_deref(),
+            Some("https://open.spotify.com/socialsession/new")
+        );
     }
 
     /// A Jam invite opened from outside asks before joining.

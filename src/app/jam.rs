@@ -123,7 +123,7 @@ impl App {
                 self.send_jam(JamBusyKind::Updating, JamRequest::QueueOnly(queue_only));
             }
             Action::CopyJamLink => {
-                if let Some(url) = self.jam.as_ref().and_then(JamSession::share_url) {
+                if let Some(url) = self.jam_share_link() {
                     ctx.copy_text(url);
                     self.toast(gettext(self.locale, "Jam link copied"));
                 }
@@ -156,6 +156,9 @@ impl App {
                 }
                 self.show_jam_session(session);
             }
+            JamEvent::InviteLink { join_token, url } => {
+                self.jam_invite = Some((join_token, url));
+            }
             JamEvent::Failed(error) => {
                 let was = self.jam_busy();
                 self.jam_busy = None;
@@ -172,7 +175,26 @@ impl App {
         if session.is_none() {
             self.jam_hold = false;
         }
+        // Ask once per Jam for the short invite link Spotify's apps share.
+        if let Some(token) = session.as_ref().and_then(|jam| jam.join_token.clone())
+            && self.jam_invite_asked.as_deref() != Some(token.as_str())
+        {
+            self.jam_invite_asked = Some(token.clone());
+            self.backend
+                .send(Command::Jam(JamRequest::InviteLink { join_token: token }));
+        }
         self.jam = session;
+    }
+
+    /// The link to invite others with: the `spotify.link` one, which offers
+    /// to open the Spotify app, once Spotify has made it; the long web
+    /// address until then.
+    pub fn jam_share_link(&self) -> Option<String> {
+        let jam = self.jam.as_ref()?;
+        match (&self.jam_invite, &jam.join_token) {
+            (Some((token, url)), Some(current)) if token == current => Some(url.clone()),
+            _ => jam.share_url(),
+        }
     }
 
     fn jam_error_text(&self, error: &JamError) -> String {

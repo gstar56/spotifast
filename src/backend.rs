@@ -800,6 +800,10 @@ pub enum JamRequest {
     },
     /// Guests may only add songs (`true`), or control playback too.
     QueueOnly(bool),
+    /// The `spotify.link` invite for the Jam with this join token.
+    InviteLink {
+        join_token: String,
+    },
     /// A guest's control, sent to the Jam instead of this player.
     Command {
         session_id: String,
@@ -815,6 +819,8 @@ pub enum JamEvent {
     Pushed(Option<crate::jam::JamSession>),
     /// A request failed; the Jam is unchanged.
     Failed(crate::jam::JamError),
+    /// The short invite link for the Jam with this join token.
+    InviteLink { join_token: String, url: String },
 }
 
 pub struct LyricsRequest {
@@ -3666,6 +3672,19 @@ impl Worker {
         let http = self.http.client();
         let events = self.events.clone();
         let waker = self.waker.clone();
+        if let JamRequest::InviteLink { join_token } = request {
+            tokio::spawn(async move {
+                // without it, the long link is shared instead
+                match crate::jam::invite_link(engine.session(), &join_token).await {
+                    Ok(url) => {
+                        let _ = events.send(Event::Jam(JamEvent::InviteLink { join_token, url }));
+                        waker.wake();
+                    }
+                    Err(error) => log::warn!("no short Jam invite link: {error}"),
+                }
+            });
+            return;
+        }
         tokio::spawn(async move {
             let event = match jam_request(&engine, http, request).await {
                 Ok(session) => JamEvent::Replied(session),
@@ -4715,6 +4734,8 @@ async fn jam_request(
             jam::command(session, &session_id, command).await?;
             jam::current(session).await
         }
+        // answered on its own in `Worker::jam`
+        JamRequest::InviteLink { .. } => jam::current(session).await,
     }
 }
 

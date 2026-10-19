@@ -3,6 +3,7 @@
 //!
 //!   cargo run --example jam_probe -- current
 //!   cargo run --example jam_probe -- start
+//!   cargo run --example jam_probe -- invite
 //!   cargo run --example jam_probe -- end <session id>
 //!   cargo run --example jam_probe -- join <link or token>
 //!   cargo run --example jam_probe -- leave <session id>
@@ -51,6 +52,20 @@ fn main() -> anyhow::Result<()> {
         match action.as_str() {
             "current" => println!("{:#?}", jam::current(&session).await),
             "start" => println!("{:#?}", jam::start(&session).await),
+            // starts a Jam, asks for its invite link, and ends it again
+            "invite" => {
+                if jam::current(&session).await?.is_some() {
+                    anyhow::bail!("already in a Jam; ending it would end it for everyone");
+                }
+                let started = jam::start(&session).await?;
+                let token = started.join_token.clone().unwrap_or_default();
+                match jam::invite_link(&session, &token).await {
+                    Ok(link) => println!("invite link: {link}"),
+                    Err(error) => println!("invite link failed: {error:?}"),
+                }
+                println!("long link: {:?}", started.share_url().map(|_| "<redacted>"));
+                println!("end: {:?}", jam::end(&session, &started.session_id).await);
+            }
             "end" => println!("{:?}", jam::end(&session, &required()?).await),
             "join" => {
                 let client = reqwest::Client::new();

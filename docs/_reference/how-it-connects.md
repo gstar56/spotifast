@@ -378,13 +378,17 @@ host:
 | Remove someone | `POST /social-connect/v3/sessions/<id>/member/<member>/kick` |
 | Let guests control playback | `PUT /social-connect/v2/sessions/current/queue_only_mode/disabled` |
 | A guest's skip or queued song | `POST /social-connect/v2/sessions/<id>/commands/from/<device>` |
+| Get the invite link to share | `POST /url-dispenser/v1/generate-url` |
 
 Spotify binds a Jam to a Connect device, so each call names this computer's
 device and the dealer connection it registered on (`Spotify-Connection-Id`),
 and a Jam needs local playback. Changes arrive on that same connection as
 `social-connect/v2/session_update` pushes. A `spotify.link` short link is
 followed, without credentials, to the page it redirects to, and the invite is
-read from that page. The invite token is never logged.
+read from that page.
+The invite Spotifast shares is the `spotify.link` short link Spotify's own
+apps share, which offers to open the Spotify app on the other side; the long
+`open.spotify.com/socialsession/` address is shared only until it arrives. The invite token is never logged.
 
 Spotify then drives each device in the Jam as an ordinary Connect controller.
 Every change anyone makes reaches the playing device as a transfer of the
