@@ -1038,6 +1038,8 @@ pub enum Action {
     ToggleShuffle,
     CycleRepeat,
     SetShuffle(bool),
+    /// Smart Shuffle on (with shuffle) or off (shuffle stays on).
+    SetSmartShuffle(bool),
     SetRepeat(crate::player::RepeatMode),
     AddToQueue {
         uri: String,

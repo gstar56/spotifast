@@ -244,7 +244,8 @@ pub fn actions_row(
                 }
             }
             let shuffle = app.playing_context_shuffle();
-            if theme::icon_button(
+            let step = app.next_shuffle_step(shuffle);
+            let button = theme::icon_button(
                 ui,
                 Icon::Shuffle,
                 26.0,
@@ -260,15 +261,18 @@ pub fn actions_row(
                 } else {
                     palette.text
                 },
-                &if shuffle {
-                    gettext(locale, "Shuffle off")
-                } else {
-                    gettext(locale, "Shuffle")
+                // what a click does next
+                &match step {
+                    Action::SetShuffle(true) => gettext(locale, "Shuffle"),
+                    Action::SetSmartShuffle(_) => gettext(locale, "Smart Shuffle"),
+                    _ => gettext(locale, "Shuffle off"),
                 },
-            )
-            .clicked()
-            {
-                app.actions.push(Action::SetShuffle(!shuffle));
+            );
+            if shuffle && app.smart_shuffle_on() {
+                widgets::smart_shuffle_sparkle(ui, button.rect, 13.0, palette.accent);
+            }
+            if button.clicked() {
+                app.actions.push(step);
             }
         }
         if let Some((uri, saved)) = &actions.saved {

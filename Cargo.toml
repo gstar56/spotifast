@@ -298,16 +298,17 @@ hyper-proxy2 = { git = "https://github.com/crmne/hyper-proxy2", rev = "efca48113
 # signature for Windows on ARM, and a volume set while the device is inactive.
 # This fork (gstar56/librespot, branch jam) adds Spotify Jam playback on top:
 # a Jam's edits continue the playing stream, `set_options` modes, and a
-# guest's own pause (src/jam.rs).
+# guest's own pause (src/jam.rs). It also plays Smart Shuffle: the
+# `context_enhancement` mode weaves in songs from the autoplay context.
 # Recovery is proposed upstream in librespot-org/librespot#1765 and the
 # volume in librespot-org/librespot#1770; the ARM signature answers
 # librespot-org/librespot#1737.
 # Every librespot crate comes from the
 # fork so one copy exists. Drop patches as upstream takes them.
-librespot-audio = { git = "https://github.com/gstar56/librespot", rev = "45e39ba975ecb7fb50b71f1eddba15a04bd891dc" }
-librespot-connect = { git = "https://github.com/gstar56/librespot", rev = "45e39ba975ecb7fb50b71f1eddba15a04bd891dc" }
-librespot-core = { git = "https://github.com/gstar56/librespot", rev = "45e39ba975ecb7fb50b71f1eddba15a04bd891dc" }
-librespot-metadata = { git = "https://github.com/gstar56/librespot", rev = "45e39ba975ecb7fb50b71f1eddba15a04bd891dc" }
-librespot-oauth = { git = "https://github.com/gstar56/librespot", rev = "45e39ba975ecb7fb50b71f1eddba15a04bd891dc" }
-librespot-playback = { git = "https://github.com/gstar56/librespot", rev = "45e39ba975ecb7fb50b71f1eddba15a04bd891dc" }
-librespot-protocol = { git = "https://github.com/gstar56/librespot", rev = "45e39ba975ecb7fb50b71f1eddba15a04bd891dc" }
+librespot-audio = { git = "https://github.com/gstar56/librespot", rev = "858e7d59ecbbc5f8b63c809a4d7450c15102dc04" }
+librespot-connect = { git = "https://github.com/gstar56/librespot", rev = "858e7d59ecbbc5f8b63c809a4d7450c15102dc04" }
+librespot-core = { git = "https://github.com/gstar56/librespot", rev = "858e7d59ecbbc5f8b63c809a4d7450c15102dc04" }
+librespot-metadata = { git = "https://github.com/gstar56/librespot", rev = "858e7d59ecbbc5f8b63c809a4d7450c15102dc04" }
+librespot-oauth = { git = "https://github.com/gstar56/librespot", rev = "858e7d59ecbbc5f8b63c809a4d7450c15102dc04" }
+librespot-playback = { git = "https://github.com/gstar56/librespot", rev = "858e7d59ecbbc5f8b63c809a4d7450c15102dc04" }
+librespot-protocol = { git = "https://github.com/gstar56/librespot", rev = "858e7d59ecbbc5f8b63c809a4d7450c15102dc04" }

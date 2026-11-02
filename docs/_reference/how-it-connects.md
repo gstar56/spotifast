@@ -419,6 +419,13 @@ This uses the existing playback session's Connect transfer request and needs
 no additional authorization. An old or unavailable Web API playback snapshot
 does not cause the previous local song to restart or replace the remote queue.
 
+While Smart Shuffle is on, the engine asks Spotify's context resolver
+(`/context-resolve/v1/autoplay`, the request that also continues a finished
+playlist) for songs to suggest, seeded with the playing context and a few of
+its songs. It asks only while the slots coming up need more, one request at
+a time, waits two minutes after an answer with nothing new and longer after
+each failure, and stops when Smart Shuffle does.
+
 When the PulseAudio backend is selected on Linux, its PulseAudio or PipeWire
 stream is named **Spotifast**, with **Spotify playback** as its description, so
 system mixers and audio processors can identify and route it. Explicit

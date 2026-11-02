@@ -91,6 +91,12 @@ librespot provides:
 - Spotify Connect, so another Spotify client can transfer playback to this
   computer.
 - Shuffle, repeat, seek, and volume.
+- **Smart Shuffle**, with this fork's librespot patches. Spotify's apps switch
+  it with the `context_enhancement` player mode and leave the player to fill
+  it in; the patched engine weaves in songs from the autoplay context, one
+  after every three of the context's own. It works only where this computer
+  plays: the Web API can neither switch it on another device nor say which
+  songs there are suggestions, though it reports whether it is on.
 - Control of restricted Connect devices, including Sonos, through the signed-in
   playback session. Sonos receivers are discovered on the local network;
   the Web API alone cannot start or control them.
@@ -111,10 +117,11 @@ The Web API and librespot do not provide these features:
   support its protocol. Spotifast's pins are local and are stored in
   `settings.json`. See [issue #31](https://github.com/crmne/spotifast/issues/31).
 - **Editing playlist folders.** librespot can only read them.
-- **Smart Shuffle, Blend, and similar Spotify features.** Spotify
-  generates these for its own clients. Spotifast only has plain shuffle.
-  Jam is the exception in this fork: it runs over the librespot session's
-  `social-connect` service. See [How It Connects](/how-it-connects/#spotify-jam).
+- **Blend, AI DJ, and similar Spotify features.** Spotify generates these
+  for its own clients. Jam and Smart Shuffle are the exceptions in this
+  fork: Jam runs over the librespot session's `social-connect` service (see
+  [How It Connects](/how-it-connects/#spotify-jam)), and Smart Shuffle is a
+  player mode the patched engine fills in itself.
   A Blend that a Spotify app already made opens like any playlist, with
   who added each song, but Spotifast cannot start or manage one.
 - **Lossless audio.** librespot does not receive lossless streams. Spotifast
