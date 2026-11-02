@@ -747,6 +747,13 @@ system. On PipeWire and PulseAudio the stream is named **Spotifast** in system
 mixers (`application.name`, with the `spotifast` icon), with **Spotify
 playback** as its media name and no media role, so its volume is remembered
 for Spotifast rather than shared with other music players.
+
+While Smart Shuffle is on, the engine asks Spotify's context resolver
+(`/context-resolve/v1/autoplay`, the request that also continues a finished
+playlist) for songs to suggest, seeded with the playing context and a few of
+its songs. It asks only while the slots coming up need more, one request at
+a time, waits two minutes after an answer with nothing new and longer after
+each failure, and stops when Smart Shuffle does.
 The same session checks releases that the Web API calls `single`, so confirmed
 EPs can carry their precise label. Spotifast deduplicates these checks while
 the app session is active. If the engine reconnects, an interrupted check may

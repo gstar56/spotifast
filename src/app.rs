@@ -790,6 +790,8 @@ pub struct App {
     /// The repeat mode saved by the last run, which the first local load
     /// starts with: the engine starts at off.
     repeat_wanted: RepeatMode,
+    /// Smart Shuffle on top of `shuffle_wanted`.
+    smart_shuffle_wanted: bool,
     /// Last local shuffle change, used to ignore its echo from the engine.
     shuffle_set_at: Option<Instant>,
     /// When tracks recently came up unavailable, to spot a key-service
@@ -1464,6 +1466,7 @@ impl App {
             local_files: None,
             shuffle_wanted: session.shuffle_on,
             repeat_wanted: RepeatMode::from_api(&session.repeat),
+            smart_shuffle_wanted: session.shuffle_on && session.smart_shuffle_on,
             shuffle_set_at: None,
             unavailable_at: Vec::new(),
             last_unavailable_reconnect: None,
@@ -2276,6 +2279,36 @@ impl App {
 
     pub fn playing_context_shuffle(&self) -> bool {
         self.shuffle_wanted
+    }
+
+    /// Smart Shuffle is on, here or as another device reports it.
+    pub fn smart_shuffle_on(&self) -> bool {
+        self.shuffle_wanted && self.smart_shuffle_wanted
+    }
+
+    /// Smart Shuffle can be switched on: only this computer's engine weaves
+    /// suggestions in. The Web API cannot ask another device for it.
+    pub fn smart_shuffle_available(&self) -> bool {
+        matches!(self.target(), Target::Local) && self.local_ready
+    }
+
+    /// What the shuffle buttons do next: off, shuffle, then Smart Shuffle
+    /// where this computer plays, and off again.
+    pub fn next_shuffle_step(&self, shuffle: bool) -> Action {
+        if !shuffle {
+            Action::SetShuffle(true)
+        } else if !self.smart_shuffle_on() && self.smart_shuffle_available() {
+            Action::SetSmartShuffle(true)
+        } else {
+            Action::SetShuffle(false)
+        }
+    }
+
+    /// Whether Smart Shuffle wove this song into what plays here.
+    pub fn is_smart_suggestion(&self, uri: &str) -> bool {
+        self.smart_shuffle_on()
+            && matches!(self.target(), Target::Local)
+            && self.local.suggestions.iter().any(|s| s == uri)
     }
 
     /// Current item for menus, using cached track details when available.
@@ -3878,6 +3911,17 @@ impl App {
         {
             // Accept shuffle changes made by another client.
             self.shuffle_wanted = state.shuffle;
+        }
+        if state.smart_shuffle != self.local.smart_shuffle
+            && self
+                .shuffle_set_at
+                .is_none_or(|at| at.elapsed() > Duration::from_secs(5))
+        {
+            self.smart_shuffle_wanted = state.smart_shuffle;
+        }
+        if state.suggestions != self.local.suggestions {
+            // Smart Shuffle wove songs in: show them under Next up.
+            self.queue_recheck_at = Some(Instant::now() + QUEUE_RECHECK);
         }
         if state.playback != self.local.playback {
             self.optimistic_playing = None;
@@ -8301,6 +8345,10 @@ impl App {
                             .remote
                             .as_ref()
                             .map(|remote| remote.state.shuffle_state);
+                        let previous_smart_shuffle = self
+                            .remote
+                            .as_ref()
+                            .map(|remote| remote.state.smart_shuffle);
                         self.remote = state.map(|state| RemoteSnapshot {
                             state,
                             received_at: Instant::now(),
@@ -8317,6 +8365,23 @@ impl App {
                         {
                             // Accept shuffle changes from another device.
                             self.shuffle_wanted = current;
+                        }
+                        // Spotify reports Smart Shuffle off for this computer,
+                        // whose engine does it without Spotify knowing, so it
+                        // counts only for another device, and only when it
+                        // changes there.
+                        if let (Some(previous), Some(current)) = (
+                            previous_smart_shuffle,
+                            self.remote
+                                .as_ref()
+                                .map(|remote| remote.state.smart_shuffle),
+                        ) && previous != current
+                            && !matches!(self.target(), Target::Local)
+                            && self
+                                .shuffle_set_at
+                                .is_none_or(|at| at.elapsed() > Duration::from_secs(5))
+                        {
+                            self.smart_shuffle_wanted = current;
                         }
                         if let Some(context) = self
                             .remote
@@ -10660,11 +10725,17 @@ impl App {
                 self.queued_play = None;
                 let mut load = local_load(&request, shuffle);
                 load.repeat = Some(self.local_repeat());
+                let smart_shuffle = shuffle && self.smart_shuffle_wanted;
+                load.smart_shuffle = Some(smart_shuffle && load.shuffle.is_some());
                 self.local_list = load.context_uri.is_none().then(|| load.uris.clone());
                 let shuffle_after = shuffle && load.shuffle.is_none() && !load.uris.is_empty();
                 self.backend.player(PlayerCommand::Load(load));
                 if shuffle_after {
-                    self.backend.player(PlayerCommand::Shuffle(true));
+                    self.backend.player(if smart_shuffle {
+                        PlayerCommand::SmartShuffle(true)
+                    } else {
+                        PlayerCommand::Shuffle(true)
+                    });
                 }
                 self.optimistic_playing = Some((true, Instant::now()));
             }
@@ -11313,8 +11384,34 @@ impl App {
         }
     }
 
+    /// Switches Smart Shuffle on (with shuffle) or off (shuffle stays on).
+    /// Only this computer's engine does it; see `smart_shuffle_available`.
+    fn set_smart_shuffle(&mut self, smart_shuffle: bool) {
+        if !matches!(self.target(), Target::Local) {
+            return;
+        }
+        self.smart_shuffle_wanted = smart_shuffle;
+        self.shuffle_wanted |= smart_shuffle;
+        self.shuffle_set_at = Some(Instant::now());
+        self.session_dirty = true;
+        if let Some(assumed) = &mut self.assumed_context {
+            assumed.shuffle = Some(self.shuffle_wanted);
+        }
+        self.queue_recheck_at = Some(Instant::now() + QUEUE_RECHECK);
+        self.note_shuffle_pending();
+        self.local.shuffle = self.shuffle_wanted;
+        self.local.smart_shuffle = smart_shuffle;
+        self.backend
+            .player(PlayerCommand::SmartShuffle(smart_shuffle));
+    }
+
     fn set_shuffle(&mut self, shuffle: bool) {
         self.shuffle_wanted = shuffle;
+        // Smart Shuffle is a kind of shuffle and ends with it.
+        if !shuffle {
+            self.smart_shuffle_wanted = false;
+            self.local.smart_shuffle = false;
+        }
         self.shuffle_set_at = Some(Instant::now());
         self.session_dirty = true;
         if let Some(assumed) = &mut self.assumed_context {
@@ -12774,9 +12871,11 @@ impl App {
                 let shuffle = self
                     .now_playing()
                     .map_or(self.shuffle_wanted, |now| now.shuffle);
-                self.set_shuffle(!shuffle);
+                let step = self.next_shuffle_step(shuffle);
+                self.apply(step, ctx);
             }
             Action::SetShuffle(shuffle) => self.set_shuffle(shuffle),
+            Action::SetSmartShuffle(smart_shuffle) => self.set_smart_shuffle(smart_shuffle),
             Action::CycleRepeat => {
                 let mode = self.now_playing().map(|now| now.repeat).unwrap_or_default();
                 self.set_repeat(mode.next());
@@ -14963,6 +15062,7 @@ impl App {
                     .unwrap_or_default(),
                 shuffle_on: self.shuffle_wanted,
                 repeat: self.local_repeat().api_name().into(),
+                smart_shuffle_on: self.smart_shuffle_wanted,
                 sorts: self
                     .table_sorts
                     .iter()
@@ -15418,6 +15518,7 @@ fn local_load(request: &PlayRequest, shuffle: bool) -> LoadSpec {
         position_ms: request.position_ms,
         play: true,
         shuffle: (shuffle && !(list && chosen)).then_some(true),
+        smart_shuffle: None,
         repeat: None,
         autoplay: false,
     }
@@ -27605,6 +27706,162 @@ mod tests {
         let player = app.backend.take_player_commands();
         assert!(!player.contains(&PlayerCommand::Next), "{player:?}");
         assert!(app.backend.take_queued_tracks().is_empty());
+    }
+
+    fn shuffle_commands(app: &App) -> Vec<PlayerCommand> {
+        app.backend
+            .take_player_commands()
+            .into_iter()
+            .filter(|command| {
+                matches!(
+                    command,
+                    PlayerCommand::Shuffle(_) | PlayerCommand::SmartShuffle(_)
+                )
+            })
+            .collect()
+    }
+
+    /// Where this computer plays, the shuffle button goes off, shuffle,
+    /// Smart Shuffle and off again, and each step reaches the engine.
+    #[test]
+    fn shuffle_cycles_through_smart_shuffle_on_this_computer() {
+        let ctx = egui::Context::default();
+        let mut app = app_with_local_manual_queue();
+        app.backend.take_player_commands();
+        let mut seen = Vec::new();
+        for _ in 0..3 {
+            app.apply(Action::ToggleShuffle, &ctx);
+            seen.push((app.playing_context_shuffle(), app.smart_shuffle_on()));
+        }
+        assert_eq!(seen, [(true, false), (true, true), (false, false)]);
+        assert_eq!(
+            shuffle_commands(&app),
+            [
+                PlayerCommand::Shuffle(true),
+                PlayerCommand::SmartShuffle(true),
+                PlayerCommand::Shuffle(false),
+            ]
+        );
+    }
+
+    /// The Web API can't ask another device for Smart Shuffle, so there the
+    /// button only switches shuffle on and off.
+    #[test]
+    fn shuffle_on_another_device_has_no_smart_step() {
+        let ctx = egui::Context::default();
+        let mut app = headless_app();
+        app.local_ready = false;
+        assert!(!app.smart_shuffle_available());
+        app.apply(Action::ToggleShuffle, &ctx);
+        assert!(app.playing_context_shuffle());
+        app.apply(Action::ToggleShuffle, &ctx);
+        assert!(!app.playing_context_shuffle());
+        assert!(!app.smart_shuffle_on());
+        assert!(shuffle_commands(&app).is_empty());
+    }
+
+    /// Smart Shuffle switched on from a phone shows here, and only the songs
+    /// it wove in carry the suggestion mark.
+    #[test]
+    fn smart_shuffle_from_another_app_shows_here() {
+        let mut app = app_with_local_manual_queue();
+        let mut state = app.local.clone();
+        state.shuffle = true;
+        state.smart_shuffle = true;
+        state.suggestions = vec!["spotify:track:ctx".to_string()].into();
+        app.queue_recheck_at = None;
+        app.handle_local(state);
+        assert!(app.queue_recheck_at.is_some(), "the woven songs show");
+        assert!(app.smart_shuffle_on());
+        assert!(app.is_smart_suggestion("spotify:track:ctx"));
+        assert!(!app.is_smart_suggestion("spotify:track:a"));
+    }
+
+    /// Starting a playlist in Smart Shuffle asks the engine for it in the
+    /// load itself, and plain shuffle says so too, so a load never inherits
+    /// the mode by accident.
+    #[test]
+    fn a_shuffled_load_names_smart_shuffle() {
+        for smart in [false, true] {
+            let mut app = app_with_local_manual_queue();
+            app.shuffle_wanted = true;
+            app.smart_shuffle_wanted = smart;
+            app.local.connected = true;
+            app.backend.take_player_commands();
+            app.play_request(PlayRequest::context("spotify:playlist:pl1"), false);
+            let load = app
+                .backend
+                .take_player_commands()
+                .into_iter()
+                .find_map(|command| match command {
+                    PlayerCommand::Load(load) => Some(load),
+                    _ => None,
+                })
+                .expect("a load");
+            assert_eq!(load.shuffle, Some(true));
+            assert_eq!(load.smart_shuffle, Some(smart));
+        }
+    }
+
+    /// Spotify's player state reports Smart Shuffle off for this computer,
+    /// whose engine does it without Spotify knowing: that must not switch it
+    /// off here (it did, 5 to 15 seconds after the click).
+    #[test]
+    fn spotifys_report_does_not_switch_off_smart_shuffle_here() {
+        let ctx = egui::Context::default();
+        let mut app = app_with_local_manual_queue();
+        app.apply(Action::ToggleShuffle, &ctx);
+        app.apply(Action::ToggleShuffle, &ctx);
+        assert!(app.smart_shuffle_on());
+        app.shuffle_set_at = Instant::now().checked_sub(Duration::from_secs(30));
+        for smart_shuffle in [true, false, false] {
+            app.handle_api(ApiResponse::PlaybackState {
+                seq: app.remote_poll_seq,
+                result: Ok(Some(PlaybackState {
+                    shuffle_state: true,
+                    smart_shuffle,
+                    ..Default::default()
+                })),
+            });
+        }
+        assert!(app.smart_shuffle_on());
+    }
+
+    /// The playlist header's shuffle button steps through Smart Shuffle too.
+    #[test]
+    fn the_header_shuffle_button_reaches_smart_shuffle() {
+        let ctx = egui::Context::default();
+        let mut app = app_with_local_manual_queue();
+        let mut steps = Vec::new();
+        for _ in 0..3 {
+            let step = app.next_shuffle_step(app.playing_context_shuffle());
+            steps.push(step.clone());
+            app.apply(step, &ctx);
+        }
+        assert!(
+            matches!(
+                steps.as_slice(),
+                [
+                    Action::SetShuffle(true),
+                    Action::SetSmartShuffle(true),
+                    Action::SetShuffle(false),
+                ]
+            ),
+            "{steps:?}"
+        );
+    }
+
+    /// Turning shuffle off, from the media keys for one, ends Smart Shuffle.
+    #[test]
+    fn smart_shuffle_ends_with_shuffle() {
+        let ctx = egui::Context::default();
+        let mut app = app_with_local_manual_queue();
+        app.apply(Action::ToggleShuffle, &ctx);
+        app.apply(Action::ToggleShuffle, &ctx);
+        assert!(app.smart_shuffle_on());
+        app.apply(Action::SetShuffle(false), &ctx);
+        assert!(!app.smart_shuffle_on());
+        assert!(!app.smart_shuffle_wanted, "shuffle on again stays plain");
     }
 
     /// The host's player is the Jam's player, so their controls stay local.

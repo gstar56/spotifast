@@ -72,6 +72,14 @@ computer transfers that device's current song, position, and queue, including
 manually queued copies. A paused session stays paused. The handoff itself does
 not consume a queue row or restore an older queue saved on this computer.
 
+In Smart Shuffle, **Next up** also holds songs Spotify suggests for the
+playing collection, one after every three of its own, each marked with a
+sparkle. They follow the same rules as the collection's rows: your songs
+under **Playing next** come first, a suggestion that plays leaves the queue
+and never comes back, and turning Smart Shuffle or shuffle off takes the
+remaining suggestions out. Suggestions arrive a moment after Smart Shuffle
+starts, and the queue rechecks when they do.
+
 1. **The list shows the play order.** The top row plays next, followed by the
    rows below it.
 

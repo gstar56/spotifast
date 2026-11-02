@@ -772,6 +772,9 @@ pub struct PlaybackState {
     pub repeat_state: String,
     #[serde(default)]
     pub shuffle_state: bool,
+    /// Smart Shuffle, which only Spotify's own apps can switch on remotely.
+    #[serde(default)]
+    pub smart_shuffle: bool,
     #[serde(default)]
     pub context: Option<Context>,
     #[serde(default)]

@@ -1887,6 +1887,9 @@ pub struct SessionState {
     /// Local repeat mode ("off", "context" or "track") saved across
     /// restarts. Sessions saved before it existed read as off.
     pub repeat: String,
+    /// Smart Shuffle on top of `shuffle_on`. A separate field, so that
+    /// sessions saved before it still load.
+    pub smart_shuffle_on: bool,
     /// Each table's chosen sort, by encoded page, restored at start.
     pub sorts: Vec<(String, crate::model::TableSort)>,
     /// Last window inner size, to restore on next launch. Logical pixels

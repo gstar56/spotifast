@@ -179,6 +179,10 @@ pub struct LocalState {
     pub position_at: Option<Instant>,
     pub volume: u16,
     pub shuffle: bool,
+    /// Smart Shuffle, which weaves Spotify's suggestions into the shuffle.
+    pub smart_shuffle: bool,
+    /// The songs Smart Shuffle wove in, in the order they play.
+    pub suggestions: Arc<[String]>,
     pub repeat: RepeatMode,
     /// The librespot engine's Spotify session is alive. Connect device
     /// activity is separate: Spotify may make this device inactive while the
@@ -254,6 +258,9 @@ pub struct LoadSpec {
     pub position_ms: u32,
     pub play: bool,
     pub shuffle: Option<bool>,
+    /// Smart Shuffle for a new load, with `shuffle`; `None` keeps the
+    /// engine's current choice.
+    pub smart_shuffle: Option<bool>,
     /// Explicit repeat preference for a new load. Otherwise retain the
     /// engine's current preference instead of librespot's default (off).
     pub repeat: Option<RepeatMode>,
@@ -280,6 +287,7 @@ impl LoadSpec {
                 shuffle: self.shuffle.unwrap_or(false),
                 repeat: repeat == RepeatMode::Context,
                 repeat_track: repeat == RepeatMode::Track,
+                smart_shuffle: self.smart_shuffle,
             })
         }
     }
@@ -302,6 +310,8 @@ pub enum PlayerCommand {
     /// after another, so dragging through fifty values lagged by seconds.
     VolumePreview(u16),
     Shuffle(bool),
+    /// Smart Shuffle on (which shuffles too) or off (shuffle stays on).
+    SmartShuffle(bool),
     Repeat(RepeatMode),
     Load(LoadSpec),
     /// Take over the active Connect session, including its queue and position.
@@ -893,6 +903,7 @@ impl Engine {
             PlayerCommand::Volume(volume) => self.note_volume(volume, false)?,
             PlayerCommand::VolumePreview(volume) => self.note_volume(volume, true)?,
             PlayerCommand::Shuffle(enabled) => spirc.shuffle(enabled)?,
+            PlayerCommand::SmartShuffle(enabled) => spirc.smart_shuffle(enabled)?,
             PlayerCommand::Repeat(mode) => match mode {
                 RepeatMode::Off => {
                     spirc.repeat_track(false)?;
@@ -1256,6 +1267,13 @@ fn apply_event(state: &mut LocalState, event: PlayerEvent) -> bool {
             set(&mut state.active_client, client_name)
         }
         PlayerEvent::ShuffleChanged { shuffle } => set(&mut state.shuffle, shuffle),
+        PlayerEvent::SmartShuffleChanged {
+            smart_shuffle,
+            suggestions,
+        } => {
+            let changed = set(&mut state.smart_shuffle, smart_shuffle);
+            changed | set(&mut state.suggestions, suggestions.into())
+        }
         PlayerEvent::RepeatChanged { context, track } => {
             let mode = if track {
                 RepeatMode::Track
@@ -1478,6 +1496,42 @@ fn read_lyrics(bytes: &[u8]) -> (Option<serde_json::Value>, String) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_load_passes_smart_shuffle_through() {
+        for smart_shuffle in [None, Some(false), Some(true)] {
+            let spec = LoadSpec {
+                shuffle: Some(true),
+                smart_shuffle,
+                ..LoadSpec::default()
+            };
+            let LoadContextOptions::Options(options) = spec.context_options(RepeatMode::Off) else {
+                panic!("ordinary playback must supply options");
+            };
+            assert_eq!(options.smart_shuffle, smart_shuffle);
+        }
+    }
+
+    #[test]
+    fn the_engine_reports_smart_shuffle_and_its_suggestions() {
+        let mut state = LocalState::default();
+        assert!(apply_event(
+            &mut state,
+            PlayerEvent::SmartShuffleChanged {
+                smart_shuffle: true,
+                suggestions: vec!["spotify:track:s".into()],
+            }
+        ));
+        assert!(state.smart_shuffle);
+        assert_eq!(&*state.suggestions, ["spotify:track:s".to_string()]);
+        assert!(!apply_event(
+            &mut state,
+            PlayerEvent::SmartShuffleChanged {
+                smart_shuffle: true,
+                suggestions: vec!["spotify:track:s".into()],
+            }
+        ));
+    }
+
     #[test]
     fn loading_another_song_keeps_repeat_with_or_without_shuffle() {
         for shuffle in [None, Some(false), Some(true)] {

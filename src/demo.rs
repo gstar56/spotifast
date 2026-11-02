@@ -759,6 +759,7 @@ pub fn populate(app: &mut App) {
             device: Some(app.devices[1].clone()),
             repeat_state: "off".into(),
             shuffle_state: true,
+            smart_shuffle: false,
             context: Some(Context {
                 uri: playlists[1].uri.clone(),
                 kind: "playlist".into(),

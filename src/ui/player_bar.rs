@@ -727,6 +727,12 @@ fn transport(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, region:
         )
     };
 
+    let smart_shuffle = shuffle && app.smart_shuffle_on();
+    let shuffle_label = if smart_shuffle {
+        gettext(app.locale, "Smart Shuffle")
+    } else {
+        gettext(app.locale, "Shuffle")
+    };
     let shuffle_color = if shuffle { palette.accent } else { dim };
     let mut cell = centered(ui, slot(widths[0]));
     let shuffle_button = theme::icon_button(
@@ -739,14 +745,17 @@ fn transport(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, region:
         } else {
             palette.text
         },
-        &gettext(app.locale, "Shuffle"),
+        &shuffle_label,
     );
+    if smart_shuffle {
+        super::widgets::smart_shuffle_sparkle(&cell, shuffle_button.rect, 9.0, palette.accent);
+    }
     shuffle_button.widget_info(|| {
         egui::WidgetInfo::selected(
             egui::WidgetType::Checkbox,
             cell.is_enabled(),
             shuffle,
-            gettext(app.locale, "Shuffle"),
+            shuffle_label.clone(),
         )
     });
     if shuffle_button.clicked() {

@@ -1852,10 +1852,15 @@ fn track_row_contents(
             ui.set_max_width(title_rect.width());
             theme::text(ui, row.item.name(), theme::medium(14.5), title_color);
         });
+        let suggested =
+            matches!(row.context, RowContext::Queue) && app.is_smart_suggestion(row.item.uri());
         child.horizontal(|ui| {
             ui.set_max_width(title_rect.width());
             match row.item {
                 PlayableItem::Track(track) => {
+                    if suggested {
+                        suggestion_badge(ui, app, &palette);
+                    }
                     if track.explicit {
                         explicit_badge(ui, &palette);
                     }
@@ -2294,6 +2299,26 @@ pub fn drag_ghost(ctx: &egui::Context, palette: &Palette, locale: Locale) {
                     });
                 });
         });
+}
+
+/// The sparkle in a shuffle button's corner while Smart Shuffle is on: the
+/// same arrows, with the mark its suggested songs carry in the queue.
+pub fn smart_shuffle_sparkle(ui: &Ui, button: egui::Rect, size: f32, color: egui::Color32) {
+    let corner = button.right_top() + vec2(-size * 0.45, size * 0.55);
+    theme::paint_icon(
+        ui,
+        Icon::Sparkles,
+        egui::Rect::from_center_size(corner, vec2(size, size)),
+        size,
+        color,
+    );
+}
+
+/// Marks a song Smart Shuffle wove in, so it is never taken for one the
+/// listener put there.
+pub fn suggestion_badge(ui: &mut Ui, app: &App, palette: &Palette) {
+    theme::icon(ui, Icon::Sparkles, 13.0, palette.accent)
+        .on_hover_text(gettext(app.locale, "Suggested by Smart Shuffle"));
 }
 
 pub fn explicit_badge(ui: &mut Ui, palette: &Palette) {
