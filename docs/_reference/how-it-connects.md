@@ -668,6 +668,23 @@ whole Jam, so Spotifast's librespot fork continues the playing stream instead
 of loading the song again, and tracks the Jam's position so a guest's own
 pause can catch back up.
 
+## Spotify DJ
+
+DJ's playlist (`spotify:playlist:37i9dQZF1EYkqdzj48dyYq`) resolves to an
+empty shell whose metadata names a DJ session. The engine resolves that
+session over the playback session, from Spotify's `lexicon-session-provider`
+service, and gets a set of about five songs, then asks for the next set, from
+the same service, when the queue runs low. It follows no other `hm://`
+address a context names. Starting the DJ from the top asks for a fresh set.
+
+Each song carries the DJ's lines as text. Before a song plays, the engine
+asks Spotify's `client-tts` service, on the `spclient` host with the session's
+token, to speak them. Spotify answers with the address of a short MP3, which
+the engine downloads without any credential, up to 4 MB and within 8 seconds,
+and plays before or after the song at Spotify's loudness. A line that does not
+arrive in time is skipped and the music plays. Nothing about listening is
+reported back to the DJ, so each start is a new set.
+
 ## The engine
 
 Playback runs on a separate runtime. Librespot maintains the Spotify Connect

@@ -40,8 +40,9 @@ Home grant for that playback account are available. If local playback is
 unavailable, the session read fails, or the grant check fails, the same shelf
 shows approximate matches found through a Web API playlist search, which can
 be rate-limited. If a refresh fails, cards already on screen remain available;
-**Retry** is shown when the first load fails. Spotify DJ is left out because
-Spotifast cannot play its special context.
+**Retry** is shown when the first load fails. Spotify's DJ is among them and
+plays here, its spoken lines included; it picks its own order, so it never
+shuffles.
 
 **Your top mixes** follows Made for you with the artist, genre and decade
 mixes Spotify builds from your listening, in Spotify's order. It comes from

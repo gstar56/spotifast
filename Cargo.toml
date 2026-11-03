@@ -376,10 +376,12 @@ hyper-proxy2 = { git = "https://github.com/crmne/hyper-proxy2", rev = "efca48113
 # This fork (gstar56/librespot, branch jam-0.17) adds Spotify Jam playback
 # on top of crmne/librespot 3ba977f: a Jam's edits continue the playing
 # stream, `set_options` modes, and a guest's own pause (src/jam.rs).
-librespot-audio = { git = "https://github.com/gstar56/librespot", rev = "18460e965d310373eda26e823105e603f719d2f2" }
-librespot-connect = { git = "https://github.com/gstar56/librespot", rev = "18460e965d310373eda26e823105e603f719d2f2" }
-librespot-core = { git = "https://github.com/gstar56/librespot", rev = "18460e965d310373eda26e823105e603f719d2f2" }
-librespot-metadata = { git = "https://github.com/gstar56/librespot", rev = "18460e965d310373eda26e823105e603f719d2f2" }
-librespot-oauth = { git = "https://github.com/gstar56/librespot", rev = "18460e965d310373eda26e823105e603f719d2f2" }
-librespot-playback = { git = "https://github.com/gstar56/librespot", rev = "18460e965d310373eda26e823105e603f719d2f2" }
-librespot-protocol = { git = "https://github.com/gstar56/librespot", rev = "18460e965d310373eda26e823105e603f719d2f2" }
+# It also plays Smart Shuffle, the `context_enhancement` mode, and Spotify's
+# DJ with its spoken lines (librespot-org/librespot#1797).
+librespot-audio = { git = "https://github.com/gstar56/librespot", rev = "c7c1ca415a647ed480403dc815050028f3b13634" }
+librespot-connect = { git = "https://github.com/gstar56/librespot", rev = "c7c1ca415a647ed480403dc815050028f3b13634" }
+librespot-core = { git = "https://github.com/gstar56/librespot", rev = "c7c1ca415a647ed480403dc815050028f3b13634" }
+librespot-metadata = { git = "https://github.com/gstar56/librespot", rev = "c7c1ca415a647ed480403dc815050028f3b13634" }
+librespot-oauth = { git = "https://github.com/gstar56/librespot", rev = "c7c1ca415a647ed480403dc815050028f3b13634" }
+librespot-playback = { git = "https://github.com/gstar56/librespot", rev = "c7c1ca415a647ed480403dc815050028f3b13634" }
+librespot-protocol = { git = "https://github.com/gstar56/librespot", rev = "c7c1ca415a647ed480403dc815050028f3b13634" }

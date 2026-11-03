@@ -5310,7 +5310,6 @@ fn observe_playlists(api: &ApiGateway, response: &ApiResponse) {
 
 const SHARED_MADE_FOR_YOU_TERMS: [&str; 4] =
     ["Discover Weekly", "Release Radar", "Daily Mix", "daylist"];
-const UNSUPPORTED_DJ_URI: &str = "spotify:playlist:37i9dQZF1EYkqdzj48dyYq";
 
 /// Search is an approximation, used only when Spotify's personalized Home
 /// section cannot be read.
@@ -5506,9 +5505,7 @@ fn shared_made_for_you_match(playlist: &Playlist, term: &str) -> bool {
             && name.strip_prefix("Daily Mix ").is_some_and(|number| {
                 !number.is_empty() && number.bytes().all(|c| c.is_ascii_digit())
             }));
-    matches_name
-        && playlist.uri != UNSUPPORTED_DJ_URI
-        && playlist.owner.id.as_deref() == Some("spotify")
+    matches_name && playlist.owner.id.as_deref() == Some("spotify")
 }
 
 /// Searches through the shared app only when the playback-session read fails.
@@ -10212,9 +10209,9 @@ mod tests {
         }
     }
 
-    /// Limits fallback results to Spotify-owned lists with playable contexts.
+    /// Limits fallback results to Spotify-owned lists.
     #[test]
-    fn shared_suggestions_are_spotify_owned_and_exclude_dj() {
+    fn shared_suggestions_are_spotify_owned() {
         let mut playlist = Playlist {
             name: "Daily Mix 3".into(),
             uri: "spotify:playlist:mix".into(),
@@ -10229,9 +10226,6 @@ mod tests {
         playlist.owner.display_name = Some("Spotify".into());
         assert!(!shared_made_for_you_match(&playlist, "Daily Mix"));
         playlist.owner.id = None;
-        assert!(!shared_made_for_you_match(&playlist, "Daily Mix"));
-        playlist.owner.id = Some("spotify".into());
-        playlist.uri = UNSUPPORTED_DJ_URI.into();
         assert!(!shared_made_for_you_match(&playlist, "Daily Mix"));
     }
 

@@ -23,8 +23,9 @@ const ENDPOINT: &str = "https://api-partner.spotify.com/pathfinder/v2/query";
 const MADE_FOR_YOU: &str = "spotify:section:0JQ5DAUnp4wcj0bCb3wh3S";
 const TOP_MIXES: &str = "spotify:section:0JQ5DAnM3wGh0gz1MXnu89";
 const QUERY_HASH: &str = "eb3fba2d388cf4fc4d696b1757a58584e9538a3b515ea742e9cc9465807340be";
-// Spotify DJ is a special context that librespot cannot play as a playlist.
-pub(crate) const UNSUPPORTED_DJ_URI: &str = "spotify:playlist:37i9dQZF1EYkqdzj48dyYq";
+/// Spotify's DJ: a playlist whose context streams sets of songs with the
+/// DJ's lines, which this fork's librespot plays.
+pub(crate) const DJ_URI: &str = "spotify:playlist:37i9dQZF1EYkqdzj48dyYq";
 const CACHE_AGE: Duration = Duration::from_secs(600);
 const LOAD_TIMEOUT: Duration = Duration::from_secs(60);
 const PAGE_SIZE: usize = 20;
@@ -365,9 +366,6 @@ fn parse_page(body: serde_json::Value) -> Result<ShelfPage, ApiError> {
             let Some(uri) = data.get("uri").and_then(|value| value.as_str()) else {
                 continue;
             };
-            if uri == UNSUPPORTED_DJ_URI {
-                continue;
-            }
             let Some(id) = uri
                 .strip_prefix("spotify:playlist:")
                 .filter(|id| id.len() == 22 && id.bytes().all(|byte| byte.is_ascii_alphanumeric()))
@@ -486,16 +484,16 @@ mod tests {
         assert!(result.playlists.is_empty());
     }
 
-    /// Excludes the DJ context by URI while retaining ordinary DJ-named lists.
+    /// Spotify's DJ is a card like any other, now that it plays.
     #[test]
-    fn unsupported_dj_context_is_omitted_without_hiding_dj_named_playlists() {
+    fn the_dj_is_kept_among_the_cards() {
         let result = parse_page(shelf(json!([
-            {"content":{"data":{"__typename":"Playlist","uri":UNSUPPORTED_DJ_URI,"name":"DJ"}}},
+            {"content":{"data":{"__typename":"Playlist","uri":DJ_URI,"name":"DJ"}}},
             {"content":{"data":{"__typename":"Playlist","uri":"spotify:playlist:1234567890123456789012","name":"DJ Mix"}}}
         ]))).unwrap();
         assert_eq!(result.count, 2);
-        assert_eq!(result.playlists.len(), 1);
-        assert_eq!(result.playlists[0].name, "DJ Mix");
+        let names: Vec<_> = result.playlists.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["DJ", "DJ Mix"]);
     }
 
     /// Stops paging according to the response's raw item count and total.

@@ -198,6 +198,12 @@ librespot provides:
   after every three of the context's own. It works only where this computer
   plays: the Web API can neither switch it on another device nor say which
   songs there are suggestions, though it reports whether it is on.
+- **Spotify DJ**, with this fork's librespot patches (from
+  [librespot-org/librespot#1797](https://github.com/librespot-org/librespot/pull/1797)).
+  DJ's playlist is a shell that names a DJ session; the patched engine plays
+  the session's sets and speaks the DJ's lines before and after songs, never
+  over them. It plays where this computer plays; on another device, Spotify's
+  own app plays it.
 - Control of restricted Connect devices, including Sonos, through the signed-in
   playback session. Sonos receivers are discovered on the local network;
   the Web API alone cannot start or control them.
@@ -245,16 +251,14 @@ The Web API and librespot do not provide these features:
   support its protocol. Spotifast's pins are local and are stored in
   `settings.json`. See [issue #31](https://github.com/crmne/spotifast/issues/31).
 - **Editing playlist folders.** librespot can only read them.
-- **Blend, AI DJ, and similar Spotify features.** Spotify generates these
-  for its own clients. Jam and Smart Shuffle are the exceptions in this
+- **Blend, Mix, and similar Spotify features.** Spotify generates these
+  for its own clients. Jam, Smart Shuffle and DJ are the exceptions in this
   fork: Jam runs over the librespot session's `social-connect` service (see
-  [How It Connects](/how-it-connects/#spotify-jam)), and Smart Shuffle is a
-  player mode the patched engine fills in itself.
+  [How It Connects](/how-it-connects/#spotify-jam)), Smart Shuffle is a
+  player mode the patched engine fills in itself, and the patched engine
+  plays DJ's sessions (see [How It Connects](/how-it-connects/#spotify-dj)).
   A Blend that a Spotify app already made opens like any playlist, with
   who added each song, but Spotifast cannot start or manage one.
-- **Spotify DJ.** Its special playlist context does not expose playable tracks
-  to librespot, so Spotifast leaves its card out of Made for you. See
-  [librespot issue #1604](https://github.com/librespot-org/librespot/issues/1604).
 - **Lossless through librespot.** librespot does not receive lossless streams.
   The optional [Soloist player](/soloist/) uses Spotify's own implementation.
   Its API does not report the delivered format or expose raw audio for

@@ -6326,9 +6326,7 @@ impl App {
                         .collect()
                 })
             });
-            if let Some(mut playlists) = playlists {
-                playlists
-                    .retain(|playlist| playlist.uri != crate::made_for_you::UNSUPPORTED_DJ_URI);
+            if let Some(playlists) = playlists {
                 home.made_for_you = Loadable::Loaded(playlists);
                 home.made_for_you_personalized = personalized;
             }
@@ -10646,8 +10644,12 @@ impl App {
             self.shuffle_set_at = Some(Instant::now());
             self.queue_recheck_at = Some(Instant::now() + QUEUE_RECHECK);
         }
-        let shuffle = shuffle_first || self.shuffle_wanted;
-        if request.offset_uri.is_none()
+        // Spotify's DJ picks its own order: it never shuffles, and starts
+        // from the top, which asks it for a fresh set.
+        let dj = request.context_uri.as_deref() == Some(crate::made_for_you::DJ_URI);
+        let shuffle = !dj && (shuffle_first || self.shuffle_wanted);
+        if !dj
+            && request.offset_uri.is_none()
             && request.offset_position.is_none()
             && request.uris.is_empty()
             && let Some(context) = request.context_uri.as_deref()
@@ -27848,6 +27850,38 @@ mod tests {
                 ]
             ),
             "{steps:?}"
+        );
+    }
+
+    /// Spotify's DJ picks its own order: it starts unshuffled and from the
+    /// top, which asks it for a fresh set, whatever shuffle is set to.
+    #[test]
+    fn the_dj_starts_unshuffled_from_the_top() {
+        let mut app = app_with_local_manual_queue();
+        app.local.connected = true;
+        app.shuffle_wanted = true;
+        app.smart_shuffle_wanted = true;
+        app.backend.take_player_commands();
+        app.play_request(PlayRequest::context(crate::made_for_you::DJ_URI), false);
+        let load = app
+            .backend
+            .take_player_commands()
+            .into_iter()
+            .find_map(|command| match command {
+                PlayerCommand::Load(load) => Some(load),
+                _ => None,
+            })
+            .expect("a load");
+        assert_eq!(
+            load.context_uri.as_deref(),
+            Some(crate::made_for_you::DJ_URI)
+        );
+        assert_eq!(load.shuffle, None);
+        assert_eq!(load.smart_shuffle, Some(false));
+        assert_eq!((load.offset_uri, load.offset_index), (None, None));
+        assert!(
+            app.playing_context_shuffle(),
+            "shuffle stays set for what plays next"
         );
     }
 

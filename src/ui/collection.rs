@@ -337,14 +337,18 @@ pub fn actions_row(
             let context_here = app.playing_context_uri().as_deref() == Some(uri.as_str());
             let now_playing_here = context_here && app.believed_playing();
             let is_filtered = filter.as_ref().is_some_and(|f| !f.trim().is_empty());
+            // Spotify's DJ lists no songs to the Web API: its page starts the
+            // DJ itself, which streams its sets.
+            let dj = uri == crate::made_for_you::DJ_URI;
             // A radio is mixed afresh each time Spotify is asked, so it
             // always plays the songs on screen.
-            let play_view = actions.view.is_some()
+            let play_view = !dj
+                && actions.view.is_some()
                 && (!app.playing_context_shuffle()
                     || is_filtered
                     || actions.save_radio.is_some()
                     || actions.plays_shown_rows);
-            let can_start = actions.view.as_ref().is_none_or(|uris| !uris.is_empty());
+            let can_start = dj || actions.view.as_ref().is_none_or(|uris| !uris.is_empty());
             let icon = if now_playing_here {
                 Icon::PauseFilled
             } else {
