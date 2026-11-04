@@ -103,6 +103,11 @@ Root: HKCU; Subkey: "Software\{#AppIdentity}\Capabilities"; ValueType: string; V
 Root: HKCU; Subkey: "Software\{#AppIdentity}\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "A native Spotify client"
 Root: HKCU; Subkey: "Software\{#AppIdentity}\Capabilities\URLAssociations"; ValueType: string; ValueName: "spotify"; ValueData: "Spotifast.spotify"
 Root: HKCU; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueName: "{#AppIdentity}"; ValueData: "Software\{#AppIdentity}\Capabilities"; Flags: uninsdeletevalue
+; Full screen lyrics flash black while the mouse moves on some graphics
+; drivers, AMD's among them, when Windows hands the full-screen OpenGL
+; window the screen directly. This is the per-app "Disable fullscreen
+; optimizations" compatibility setting, for this copy only, removed with it.
+Root: HKCU; Subkey: "Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"; ValueType: string; ValueName: "{app}\{#AppExeName}"; ValueData: "~ DISABLEDXMAXIMIZEDWINDOWEDMODE"; Flags: uninsdeletevalue
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
