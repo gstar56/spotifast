@@ -78,6 +78,7 @@ Spotify lyrics without changing players.
 | **Spotify Jam** | Start a Jam and share the link, or join a friend's Jam and listen in sync. |
 | **Queue** | Add songs to the queue, or choose **Play next** to put a song or selection first when playing on this computer. |
 | **Spotify DJ** | Play Spotify's DJ, spoken lines included, while this computer plays. |
+| **Crossfade** | Blend the end of a song into the next, for up to 12 seconds, while this computer plays. |
 | **Smart Shuffle** | Shuffle a playlist with a song Spotify suggests after every three of yours, while this computer plays. |
 | **Themes** | Choose light, dark, system appearance, or custom colours, with one theme for light mode and one for dark mode that switch with the system. On Omarchy, follow your desktop theme. |
 | **Desktop controls** | Use keyboard shortcuts and media keys. Keep music playing from the tray when supported by your desktop and settings, and start Spotifast with your computer, with its window or in the tray. |

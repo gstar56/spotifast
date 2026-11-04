@@ -829,6 +829,8 @@ pub enum Command {
     },
     /// OS reports network reachability changed.
     NetworkStatus(bool),
+    /// The crossfade's length in seconds, for this engine and the next.
+    Crossfade(u8),
     /// Internal: librespot's session ended on its own.
     Reconnect,
     /// Internal: the backoff after a failed engine connection has passed.
@@ -1243,6 +1245,8 @@ pub struct Backend {
     #[cfg(test)]
     network_statuses: std::sync::Mutex<Vec<bool>>,
     #[cfg(test)]
+    crossfades: std::sync::Mutex<Vec<u8>>,
+    #[cfg(test)]
     playlist_item_requests: std::sync::Mutex<Vec<(String, u32, u64)>>,
     #[cfg(test)]
     playlist_sample_requests: std::sync::Mutex<Vec<(String, u32, u64)>>,
@@ -1347,6 +1351,8 @@ impl Backend {
             offline: false,
             #[cfg(test)]
             network_statuses: std::sync::Mutex::new(Vec::new()),
+            #[cfg(test)]
+            crossfades: std::sync::Mutex::new(Vec::new()),
             #[cfg(test)]
             playlist_item_requests: std::sync::Mutex::new(Vec::new()),
             #[cfg(test)]
@@ -1703,6 +1709,27 @@ impl Backend {
             self.queued_tracks.lock().unwrap().push(uri.clone());
         }
         self.send(Command::Player(command));
+    }
+
+    /// How long songs that end by themselves overlap the next, applied to
+    /// the running engine at once.
+    pub fn crossfade(&self, seconds: u8) {
+        #[cfg(test)]
+        self.crossfades
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(seconds);
+        self.send(Command::Crossfade(seconds));
+    }
+
+    #[cfg(test)]
+    pub fn take_crossfades(&self) -> Vec<u8> {
+        std::mem::take(
+            &mut *self
+                .crossfades
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        )
     }
 
     /// Whether the system says the internet can be reached. Without it the
@@ -2699,6 +2726,12 @@ impl Worker {
                         self.on_engine_connected(session_generation, *engine, error, attempt);
                     } else if let Some(engine) = *engine {
                         engine.shutdown();
+                    }
+                }
+                Command::Crossfade(seconds) => {
+                    self.engine_config.crossfade_seconds = seconds;
+                    if let Some(engine) = &self.engine {
+                        engine.set_crossfade(seconds);
                     }
                 }
                 Command::NetworkStatus(reachable) => {

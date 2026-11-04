@@ -44,6 +44,9 @@ use crate::api::models::ArtistRef;
 use crate::sink::{AudioControl, DeviceHook, ErrorHook, RodioSink};
 use crate::vis::{AudioTap, Tapped};
 
+/// The longest crossfade, as in Spotify's own apps; librespot caps it there.
+pub const CROSSFADE_MAX_SECONDS: u8 = 12;
+
 #[derive(Clone, Debug)]
 pub struct EngineConfig {
     pub device_name: String,
@@ -51,6 +54,7 @@ pub struct EngineConfig {
     pub normalisation: bool,
     pub autoplay: bool,
     pub gapless: bool,
+    pub crossfade_seconds: u8,
     /// The saved output, an id or an older build's name (`crate::sink::Saved`).
     pub audio_device: Option<String>,
     pub initial_volume: u16,
@@ -531,7 +535,12 @@ impl Engine {
         let session = Session::new(session_config, Some(cache));
         let carrying = kept.is_some();
         let (player, mixer, state, audio) = match kept {
-            Some(kept) => (kept.player, kept.mixer, kept.state, kept.audio),
+            Some(kept) => {
+                // The kept player started with an older engine's settings.
+                kept.player
+                    .set_crossfade(crossfade(config.crossfade_seconds));
+                (kept.player, kept.mixer, kept.state, kept.audio)
+            }
             None => Self::start_player(config, &session, &notify)?,
         };
 
@@ -641,6 +650,7 @@ impl Engine {
         let player_config = PlayerConfig {
             bitrate: config.bitrate(),
             gapless: config.gapless,
+            crossfade: crossfade(config.crossfade_seconds),
             normalisation: config.normalisation,
             normalisation_type: NormalisationType::Auto,
             position_update_interval: Some(Duration::from_secs(1)),
@@ -700,6 +710,11 @@ impl Engine {
             state: Arc::clone(&self.state),
             audio: Arc::clone(&self.audio),
         }
+    }
+
+    /// From the next song that ends by itself on, without a restart.
+    pub fn set_crossfade(&self, seconds: u8) {
+        self.player.set_crossfade(crossfade(seconds));
     }
 
     /// Whether the player still plays only what a dropped session left it:
@@ -1019,6 +1034,10 @@ fn watch_jam(session: &Session, notify: Notify) {
             }
         }
     });
+}
+
+fn crossfade(seconds: u8) -> Duration {
+    Duration::from_secs(seconds.min(CROSSFADE_MAX_SECONDS).into())
 }
 
 fn command_interrupts_audio(state: &LocalState, command: &PlayerCommand) -> bool {
@@ -2119,6 +2138,7 @@ mod tests {
             normalisation: false,
             autoplay: true,
             gapless: true,
+            crossfade_seconds: 0,
             audio_device: None,
             initial_volume: 1,
             volume_dir: PathBuf::new(),

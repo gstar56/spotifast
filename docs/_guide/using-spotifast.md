@@ -302,6 +302,14 @@ The default local output smooths volume and mute changes over 30 ms. Explicit
 track changes and play/pause/stop use nominal 50 ms fades. Stopping can shorten
 the fade to the queued audio. Natural track transitions remain gapless.
 
+**Crossfade**, under **Settings → Playback on this computer**, blends the end
+of a song into the next, for up to 12 seconds. A change applies from the next
+song on, without restarting playback. Only a song that ends by itself blends:
+a skip, a seek, a pause or a new playlist cuts straight to the next song, and
+the DJ's spoken lines are never played over. The next song has to have
+started loading by then, so on a slow connection a song may still end without
+the blend.
+
 Left and right arrows adjust a focused volume slider by five percentage
 points, or the seek slider by one percent of the song. Screen readers can
 also read and set these sliders' values. `Ctrl+F` (`Cmd+F` on macOS) focuses

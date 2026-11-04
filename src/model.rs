@@ -1504,6 +1504,8 @@ pub enum Action {
     SetMilkdropPanel(u32),
     /// How long each MilkDrop preset plays, in seconds.
     SetMilkdropSeconds(u32),
+    /// How many seconds a song that ends by itself overlaps the next.
+    SetCrossfade(u8),
     SetMilkdropScale(u32),
     /// How many frames a second the MilkDrop window draws; 0 is uncapped.
     SetMilkdropFps(u32),

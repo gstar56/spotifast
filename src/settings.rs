@@ -270,6 +270,9 @@ pub struct Settings {
     pub normalisation: bool,
     pub autoplay: bool,
     pub gapless: bool,
+    /// How many seconds a song that ends by itself overlaps the next, up to
+    /// [`crate::player::CROSSFADE_MAX_SECONDS`]; 0 is off.
+    pub crossfade_seconds: u8,
     /// The output local playback uses: the id of a device
     /// `fastframe_audio::output_devices` lists, or `None` for the system
     /// default. Files from 0.13.3 and earlier may hold a device's name instead; see
@@ -495,6 +498,7 @@ impl Default for Settings {
             normalisation: false,
             autoplay: true,
             gapless: true,
+            crossfade_seconds: 0,
             audio_device: None,
             local_files_folder: None,
             audio_buffer_ms: default_buffer_ms(),

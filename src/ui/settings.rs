@@ -750,6 +750,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let normalize_volume = gettext(locale, "Normalize volume");
     let autoplay = gettext(locale, "Autoplay");
     let gapless = gettext(locale, "Gapless playback");
+    let crossfade = gettext(locale, "Crossfade");
     let keep_playing = gettext(locale, "Keep music playing when the window closes");
     let update_checks = gettext(locale, "Automatic update checks");
     let audio_cache = gettext(locale, "Audio cache");
@@ -858,8 +859,15 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         )
         .when(!cfg!(target_os = "macos")),
         RowText::new(start_with_computer.clone(), start_detail).when(start_available),
+        RowText::new(
+            crossfade.clone(),
+            gettext(
+                locale,
+                "Blend the end of a song into the next. Skipped songs and the DJ's spoken lines never blend.",
+            ),
+        ),
     ];
-    for index in [0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 14] {
+    for index in [0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 14, 18] {
         playback_rows[index].available &= built_in;
     }
     if section_matches(&needle, &playback, &playback_rows) {
@@ -983,6 +991,31 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 if widgets::switch(ui, &palette, &gapless, &mut app.settings.gapless).changed() {
                     changed = true;
                     playback_dirty = true;
+                }
+            });
+            // Applied at once: the engine takes it from the next song on.
+            filtered_row(ui, &palette, &needle, &playback, &playback_rows[18], |ui| {
+                let mut seconds = app.settings.crossfade_seconds;
+                let off = gettext(locale, "Off");
+                let changed = setting_slider(
+                    ui,
+                    &palette,
+                    &mut seconds,
+                    0..=crate::player::CROSSFADE_MAX_SECONDS,
+                    |slider| slider.step_by(1.0),
+                    |value| {
+                        value.speed(0.05).custom_formatter(move |value, _| {
+                            if value < 0.5 {
+                                off.to_string()
+                            } else {
+                                format!("{value:.0} s")
+                            }
+                        })
+                    },
+                )
+                .changed();
+                if changed {
+                    app.actions.push(Action::SetCrossfade(seconds));
                 }
             });
             filtered_row(ui, &palette, &needle, &playback, &playback_rows[6], |ui| {

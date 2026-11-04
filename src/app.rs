@@ -14185,6 +14185,14 @@ impl App {
                 self.settings.milkdrop_seconds = seconds.clamp(1, 3600);
                 self.settings_dirty = true;
             }
+            Action::SetCrossfade(seconds) => {
+                let seconds = seconds.min(crate::player::CROSSFADE_MAX_SECONDS);
+                if self.settings.crossfade_seconds != seconds {
+                    self.settings.crossfade_seconds = seconds;
+                    self.settings_dirty = true;
+                    self.backend.crossfade(seconds);
+                }
+            }
             Action::SetMilkdropFps(fps) => {
                 self.settings.milkdrop_fps = if fps == 0 {
                     0
@@ -15345,6 +15353,9 @@ pub fn engine_config(
         normalisation: settings.normalisation,
         autoplay: settings.autoplay,
         gapless: settings.gapless,
+        crossfade_seconds: settings
+            .crossfade_seconds
+            .min(crate::player::CROSSFADE_MAX_SECONDS),
         buffer_ms: settings.audio_buffer_ms,
         audio_device: settings
             .audio_device
@@ -36538,6 +36549,30 @@ mod tests {
         app.handle_backend_events(vec![Event::NetworkStatus(true)]);
 
         assert!(app.backend.take_playlist_item_requests().is_empty());
+    }
+
+    /// The crossfade slider reaches the engine at once, without a restart,
+    /// capped at Spotify's 12 seconds, and only when it moves. The next
+    /// engine starts with it too.
+    #[test]
+    fn crossfade_reaches_the_engine_at_once_and_is_capped() {
+        let mut app = headless_app();
+        let ctx = egui::Context::default();
+        app.apply(Action::SetCrossfade(6), &ctx);
+        app.apply(Action::SetCrossfade(6), &ctx);
+        app.apply(Action::SetCrossfade(30), &ctx);
+        assert_eq!(app.backend.take_crossfades(), [6, 12]);
+        assert_eq!(app.settings.crossfade_seconds, 12);
+        assert!(app.settings_dirty);
+        let config = engine_config(
+            &app.dirs,
+            &app.settings,
+            app.applied_proxy.clone(),
+            std::sync::Arc::clone(&app.winamp.tap),
+            std::sync::Arc::clone(&app.winamp.eq),
+        );
+        assert_eq!(config.crossfade_seconds, 12);
+        app.backend.shutdown();
     }
 
     /// The system's word on reaching the internet (fastframe-power, on

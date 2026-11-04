@@ -376,6 +376,7 @@ main fields are:
 | `normalisation` | `false` | Volume normalisation |
 | `autoplay` | `true` | Keep playing similar music at the end |
 | `gapless` | `true` | Gapless playback |
+| `crossfade_seconds` | `0` | How many seconds, up to 12, a song that ends by itself overlaps the next; `0` is off |
 | `audio_device` | `null` | The output local playback uses, by the id of a device **Audio output** in the device picker lists: PipeWire's or PulseAudio's node name or an ALSA PCM on Linux, the WASAPI endpoint id on Windows, the CoreAudio UID on macOS. `null` is the system default. A device that is not there plays through the default. A name saved by 0.13.3 or earlier opens the output that still has it and is replaced by its id once music plays there; any other name plays through the default and is kept until another choice. The `audio_backend` older versions saved is ignored and no longer written |
 | `audio_cache_mb` | `1024` | On-disk audio cache budget |
 | `local_files_folder` | `null` | Folder, with its subfolders, that a playlist's local files play from |
