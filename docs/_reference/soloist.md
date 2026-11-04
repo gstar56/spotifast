@@ -255,8 +255,22 @@ refers to endpoint volume, which affects other apps as well. Spotifast leaves
 that system control alone.
 
 Spotify lists capabilities such as Smart Shuffle, Jam and crossfade for its
-player. Spotifast only offers controls exposed by the documented Soloist API;
-those names alone do not establish an integration.
+player. Soloist's own API has no controls for them, so this fork asks
+Spotify for three of them over the built-in player's separate session, as
+Spotify's apps ask any device:
+
+- **Jam** starts and is joined on Soloist's device, and Soloist plays it
+  itself. Ending one also takes Soloist out of the Jam, or Spotify opens a
+  new one for it at once.
+- **Spotify DJ** starts by the DJ session its playlist names; started by the
+  playlist alone, Soloist acknowledges and plays nothing.
+- **Smart Shuffle** is sent with a play, which restarts the playing song
+  where it is. It works on playlists only: on Liked Songs Spotify ignores it
+  and Soloist loses track of the song, so the shuffle buttons offer plain
+  shuffle there.
+
+These need the built-in player's sign-in alongside Soloist. Crossfade is the
+built-in player's own and does not apply to Soloist.
 
 ## Credentials, privacy and terms
 

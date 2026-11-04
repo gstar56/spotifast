@@ -34,6 +34,12 @@ As a guest:
 - **Pause** pauses only you. Press play to catch back up with the Jam.
 - Choose **Leave Jam** to leave.
 
+## With Spotify Soloist
+
+With [Soloist](/soloist/) as the player, a Jam you start or join plays on
+Soloist, which handles it as Spotify's own apps do. A guest's pause pauses
+Soloist like any other.
+
 ## Limits
 
 Jam uses Spotify's private service rather than a public API, so Spotify can

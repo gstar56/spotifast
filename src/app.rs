@@ -2286,10 +2286,17 @@ impl App {
         self.shuffle_wanted && self.smart_shuffle_wanted
     }
 
-    /// Smart Shuffle can be switched on: only this computer's engine weaves
-    /// suggestions in. The Web API cannot ask another device for it.
+    /// Smart Shuffle can be switched on: this computer's engine weaves
+    /// suggestions in, and Soloist, Spotify's own player, does it itself
+    /// for a playlist when the engine's session asks. The Web API cannot ask
+    /// another device.
     pub fn smart_shuffle_available(&self) -> bool {
-        matches!(self.target(), Target::Local) && self.local_ready
+        self.local_ready
+            && (matches!(self.target(), Target::Local)
+                || (self.targets_own_soloist()
+                    && self
+                        .playing_context_uri()
+                        .is_none_or(|uri| soloist_smart_shuffles(&uri))))
     }
 
     /// What the shuffle buttons do next: off, shuffle, then Smart Shuffle
@@ -10743,7 +10750,21 @@ impl App {
             }
             Target::Remote(Some(device_id)) => {
                 self.queued_play = None;
-                if shuffle {
+                if shuffle
+                    && self.smart_shuffle_on()
+                    && self.targets_own_soloist()
+                    && self.local_ready
+                    && request
+                        .context_uri
+                        .as_deref()
+                        .is_some_and(soloist_smart_shuffles)
+                {
+                    self.backend.api(ApiRequest::SmartShuffle {
+                        device_id: Some(device_id),
+                        enabled: true,
+                        play: request,
+                    });
+                } else if shuffle {
                     self.backend.api(ApiRequest::ShufflePlay {
                         device_id: Some(device_id),
                         play: request,
@@ -11389,6 +11410,34 @@ impl App {
     /// Switches Smart Shuffle on (with shuffle) or off (shuffle stays on).
     /// Only this computer's engine does it; see `smart_shuffle_available`.
     fn set_smart_shuffle(&mut self, smart_shuffle: bool) {
+        if self.targets_own_soloist() && self.local_ready {
+            self.smart_shuffle_wanted = smart_shuffle;
+            self.shuffle_wanted |= smart_shuffle;
+            self.shuffle_set_at = Some(Instant::now());
+            self.session_dirty = true;
+            self.queue_recheck_at = Some(Instant::now() + QUEUE_RECHECK);
+            // Spotify takes the mode only with a play: the playing song
+            // starts again where it is, now with or without suggestions.
+            // With nothing playing, the next shuffled start takes it.
+            if let Some(context) = self
+                .playing_context_uri()
+                .filter(|uri| soloist_smart_shuffles(uri))
+                && let Some(now) = self.now_playing()
+            {
+                let play = PlayRequest {
+                    context_uri: Some(context),
+                    offset_uri: Some(now.uri.clone()),
+                    position_ms: now.position_ms,
+                    ..PlayRequest::default()
+                };
+                self.backend.api(ApiRequest::SmartShuffle {
+                    device_id: self.soloist_device_id.clone(),
+                    enabled: smart_shuffle,
+                    play,
+                });
+            }
+            return;
+        }
         if !matches!(self.target(), Target::Local) {
             return;
         }
@@ -15336,6 +15385,13 @@ fn slow_banner_due(last: Option<&str>, now: jiff::Timestamp) -> bool {
     };
     let elapsed = now.duration_since(last);
     elapsed < jiff::SignedDuration::ZERO || elapsed >= SLOW_BANNER_INTERVAL
+}
+
+/// Whether Soloist does Smart Shuffle for `context`. Spotify takes it for a
+/// playlist; on Liked Songs it ignores the mode, and Soloist loses track of
+/// the song it plays.
+fn soloist_smart_shuffles(context: &str) -> bool {
+    context.starts_with("spotify:playlist:")
 }
 
 pub fn engine_config(
@@ -23941,6 +23997,53 @@ mod tests {
         );
         app.reveal_theme_changes = false;
         app
+    }
+
+    /// While Soloist plays, the shuffle buttons reach Smart Shuffle too, sent
+    /// to Soloist's device as its own request; Soloist does the rest.
+    #[test]
+    fn smart_shuffle_goes_to_soloist_while_it_plays() {
+        let mut app = test_app("soloist-smart-shuffle");
+        let ctx = egui::Context::default();
+        app.settings.soloist_enabled = true;
+        app.soloist_status = crate::soloist::Status::Ready {
+            name: "ours".into(),
+            version: "1".into(),
+            expires: u64::MAX,
+        };
+        app.selected_device = Some("own-soloist".into());
+        app.soloist_device_id = app.selected_device.clone();
+        app.local_ready = true;
+        assert!(app.targets_own_soloist());
+        assert!(app.smart_shuffle_available());
+        assert!(matches!(
+            app.next_shuffle_step(true),
+            Action::SetSmartShuffle(true)
+        ));
+        // Nothing plays yet: the next shuffled start takes it.
+        app.apply(Action::SetSmartShuffle(true), &ctx);
+        assert!(app.smart_shuffle_on());
+        assert!(app.backend.take_remote_shuffle_requests().is_empty());
+        app.start_play(PlayRequest::context("spotify:playlist:p"), false);
+        assert!(matches!(
+            app.backend.take_remote_shuffle_requests().as_slice(),
+            [ApiRequest::SmartShuffle { device_id: Some(id), enabled: true, play }]
+                if id == "own-soloist" && play.context_uri.as_deref() == Some("spotify:playlist:p")
+        ));
+        // Liked Songs shuffles plainly: Spotify drops the mode there.
+        app.start_play(PlayRequest::context("spotify:user:me:collection"), false);
+        assert!(app.backend.take_remote_shuffle_requests().is_empty());
+        assert!(matches!(
+            app.backend.take_remote_play_requests().as_slice(),
+            [.., ApiRequest::ShufflePlay { .. }]
+        ));
+        assert!(!soloist_smart_shuffles("spotify:user:me:collection"));
+        app.local_ready = false;
+        assert!(
+            !app.smart_shuffle_available(),
+            "the engine's session sends it"
+        );
+        app.backend.shutdown();
     }
 
     #[test]

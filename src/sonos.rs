@@ -178,6 +178,38 @@ pub fn command_body(
     Some(json!({ "command": command }))
 }
 
+/// Starts a play command shuffled, with Smart Shuffle on or off: the
+/// `context_enhancement` mode asks for suggestions or not. Spotify refuses
+/// the mode in `set_options` from this session (403) but takes it as the
+/// play's player options.
+pub fn with_smart_shuffle(body: &mut Value, enabled: bool) {
+    let mode = if enabled { "RECOMMENDATION" } else { "NONE" };
+    body["command"]["options"]["player_options_override"] = json!({
+        "shuffling_context": true,
+        "modes": { "context_enhancement": mode },
+    });
+}
+
+/// Starts Spotify's DJ. Named by its playlist alone, a remote player
+/// acknowledges the command and plays nothing; named by the DJ session the
+/// playlist points to, Spotify's own players start it.
+pub fn dj_play_body(dj_uri: &str) -> Value {
+    let session =
+        format!("hm://lexicon-session-provider/context-resolve/v2/session?contextUri={dj_uri}");
+    json!({
+        "command": {
+            "endpoint": "play",
+            "context": {
+                "uri": dj_uri,
+                "url": session,
+                "metadata": { "lexicon_set_type": "your_dj", "lexicon_context_url": session },
+            },
+            "play_origin": { "feature_identifier": "dj" },
+            "options": { "license": "on-demand", "skip_to": {}, "player_options_override": {} },
+        }
+    })
+}
+
 /// Keeps a Spotify context intact or builds an ordered page for explicit tracks.
 fn play_command(request: &PlayRequest) -> Value {
     let single = request
@@ -347,6 +379,50 @@ mod tests {
             path: path.into(),
             cast: false,
         }
+    }
+
+    /// Smart Shuffle rides on a play as its player options: shuffled, with
+    /// the suggestions mode on or off, and the play itself kept.
+    #[test]
+    fn smart_shuffle_is_a_plays_suggestions_mode() {
+        let play = PlayRequest {
+            context_uri: Some("spotify:playlist:p".into()),
+            offset_uri: Some("spotify:track:t".into()),
+            position_ms: 30_000,
+            ..PlayRequest::default()
+        };
+        let mut on = command_body(RemoteAction::Play, Some(&play), 0, false, "").unwrap();
+        with_smart_shuffle(&mut on, true);
+        let options = &on["command"]["options"];
+        assert_eq!(on["command"]["endpoint"], "play");
+        assert_eq!(options["skip_to"]["track_uri"], "spotify:track:t");
+        assert_eq!(options["seek_to"], 30_000);
+        assert_eq!(
+            options["player_options_override"]["shuffling_context"],
+            true
+        );
+        assert_eq!(
+            options["player_options_override"]["modes"]["context_enhancement"],
+            "RECOMMENDATION"
+        );
+        with_smart_shuffle(&mut on, false);
+        assert_eq!(
+            on["command"]["options"]["player_options_override"]["modes"]["context_enhancement"],
+            "NONE"
+        );
+    }
+
+    /// DJ starts by its session, which its playlist names.
+    #[test]
+    fn dj_starts_by_its_session() {
+        let body = dj_play_body("spotify:playlist:dj");
+        let context = &body["command"]["context"];
+        assert_eq!(context["uri"], "spotify:playlist:dj");
+        assert_eq!(
+            context["url"],
+            "hm://lexicon-session-provider/context-resolve/v2/session?contextUri=spotify:playlist:dj"
+        );
+        assert_eq!(context["metadata"]["lexicon_context_url"], context["url"]);
     }
 
     #[test]

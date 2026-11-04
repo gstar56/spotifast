@@ -85,6 +85,15 @@ pub struct Client {
     audio_delay_ms: Arc<AtomicU32>,
 }
 impl Client {
+    /// Soloist's Spotify Connect device, once bound.
+    pub fn device_id(&self) -> Option<String> {
+        self.endpoint
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .device
+            .as_ref()
+            .and_then(|device| device.id.clone())
+    }
     pub fn bind(&self, device: Option<Device>) {
         self.endpoint
             .write()

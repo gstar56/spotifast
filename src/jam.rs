@@ -419,11 +419,11 @@ fn path_safe(id: &str) -> Result<&str, JamError> {
     if safe { Ok(id) } else { Err(JamError::BadLink) }
 }
 
-/// The Jam this device is in, if any.
-pub async fn current(session: &Session) -> Result<Option<JamSession>, JamError> {
+/// The Jam `device` is in, if any.
+pub async fn current(session: &Session, device: &str) -> Result<Option<JamSession>, JamError> {
     let endpoint = format!(
         "/social-connect/v2/sessions/current?local_device_id={}",
-        session.device_id()
+        path_safe(device)?
     );
     match call(session, Method::GET, &endpoint).await {
         Ok(value) => Ok(session_from_value(&value)),
@@ -432,23 +432,24 @@ pub async fn current(session: &Session) -> Result<Option<JamSession>, JamError> 
     }
 }
 
-/// Starts a Jam on this device, or returns the one it already hosts. The Jam
-/// takes over whatever this device is playing.
-pub async fn start(session: &Session) -> Result<JamSession, JamError> {
+/// Starts a Jam on `device`, or returns the one it already hosts. The Jam
+/// takes over whatever that device is playing. It need not be this
+/// session's: Spotify's apps start one on a speaker the same way.
+pub async fn start(session: &Session, device: &str) -> Result<JamSession, JamError> {
     let endpoint = format!(
         "/social-connect/v2/sessions/current_or_new?activate=true&local_device_id={}&type=REMOTE",
-        session.device_id()
+        path_safe(device)?
     );
     parsed(&call(session, Method::GET, &endpoint).await?)
 }
 
 /// Joins someone's Jam by its invite token. social-connect then transfers the
-/// Jam to this device, so it plays here.
-pub async fn join(session: &Session, token: &str) -> Result<JamSession, JamError> {
+/// Jam to `device`, so it plays there.
+pub async fn join(session: &Session, token: &str, device: &str) -> Result<JamSession, JamError> {
     let endpoint = format!(
         "/social-connect/v2/sessions/join/{}?playback_control=listen_and_control&join_type=deeplinking&local_device_id={}",
         path_safe(token)?,
-        session.device_id()
+        path_safe(device)?
     );
     parsed(&call(session, Method::POST, &endpoint).await?)
 }
@@ -457,14 +458,14 @@ pub async fn join(session: &Session, token: &str) -> Result<JamSession, JamError
 ///
 /// Spotify refuses the old device-wide `v2/sessions/leave` with 405, so
 /// the session's own leave path goes first; the others are tried in turn.
-pub async fn leave(session: &Session, session_id: &str) -> Result<(), JamError> {
+pub async fn leave(session: &Session, session_id: &str, device: &str) -> Result<(), JamError> {
     let id = path_safe(session_id)?;
     let attempts = [
         format!("/social-connect/v3/sessions/{id}/leave"),
         format!("/social-connect/v2/sessions/{id}/leave"),
         format!(
             "/social-connect/v2/sessions/leave?local_device_id={}",
-            session.device_id()
+            path_safe(device)?
         ),
     ];
     let mut last = JamError::NotFound;
@@ -555,9 +556,10 @@ pub async fn set_queue_only(session: &Session, queue_only: bool) -> Result<(), J
 pub async fn command(
     session: &Session,
     session_id: &str,
+    device: &str,
     mut command: Value,
 ) -> Result<(), JamError> {
-    let device = session.device_id().to_owned();
+    let device = path_safe(device)?.to_owned();
     if let Some(fields) = command.as_object_mut() {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

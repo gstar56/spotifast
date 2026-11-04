@@ -382,6 +382,15 @@ pub enum ApiRequest {
         device_id: Option<String>,
         play: PlayRequest,
     },
+    /// Starts `play` shuffled, with Smart Shuffle on or off, on a device that
+    /// does Smart Shuffle itself, Soloist's. Spotify takes the mode only as
+    /// part of a play. The Web API has no word for it; there it is a
+    /// shuffled play.
+    SmartShuffle {
+        device_id: Option<String>,
+        enabled: bool,
+        play: PlayRequest,
+    },
     AddToQueue {
         uri: String,
         device_id: Option<String>,
@@ -1502,7 +1511,7 @@ impl Backend {
             ApiRequest::Remote {
                 action: RemoteAction::Shuffle,
                 ..
-            }
+            } | ApiRequest::SmartShuffle { .. }
         ) {
             self.remote_shuffle_requests
                 .lock()
@@ -1936,6 +1945,9 @@ impl PlaylistHeaderLookup {
 struct Worker {
     soloist_output_volume: crate::soloist::OutputVolume,
     soloist: Option<crate::soloist::Handle>,
+    /// Soloist's Spotify Connect device, once the app has found it: a Jam
+    /// plays there while Soloist is the player.
+    soloist_device: Option<String>,
     soloist_generation: u64,
     dirs: AppDirs,
     credentials: CredentialStore,
@@ -2066,6 +2078,7 @@ impl Worker {
         Self {
             soloist_output_volume: crate::soloist::OutputVolume::default(),
             soloist: None,
+            soloist_device: None,
             soloist_generation: 0,
             #[cfg(not(test))]
             credentials: CredentialStore::new(dirs.clone()),
@@ -2338,6 +2351,7 @@ impl Worker {
                     }
                 }
                 Command::SoloistDevice(device) => {
+                    self.soloist_device = device.as_ref().and_then(|device| device.id.clone());
                     if let Some(soloist) = &self.soloist {
                         soloist.client.bind(device);
                     }
@@ -4856,6 +4870,13 @@ impl Worker {
         let http = self.http.client();
         let events = self.events.clone();
         let waker = self.waker.clone();
+        // While Soloist plays, the Jam is Soloist's: Spotify's own player
+        // takes a Jam's transfers itself. Otherwise it is the engine's.
+        let device = self
+            .soloist
+            .as_ref()
+            .and(self.soloist_device.clone())
+            .unwrap_or_else(|| engine.session().device_id().to_owned());
         if let JamRequest::InviteLink { join_token } = request {
             tokio::spawn(async move {
                 // without it, the long link is shared instead
@@ -4870,7 +4891,7 @@ impl Worker {
             return;
         }
         tokio::spawn(async move {
-            let event = match jam_request(&engine, http, request).await {
+            let event = match jam_request(&engine, http, &device, request).await {
                 Ok(session) => JamEvent::Replied(session),
                 Err(error) => JamEvent::Failed(error),
             };
@@ -5125,6 +5146,12 @@ impl Worker {
             let (response, expired) = tokio::select! {
                 _ = session.changed() => return,
                 result = async {
+                    if let Some(soloist) = &soloist
+                        && let Some(engine) = engine.as_deref()
+                        && let Some(response) = soloist_over_connect(soloist, engine, &request).await
+                    {
+                        return (response, Vec::new());
+                    }
                     if let Some(soloist) = soloist && let Some(response) = soloist.dispatch(&request).await {
                         return (response, Vec::new());
                     }
@@ -5212,6 +5239,7 @@ fn operation_for(api: &ApiGateway, request: &ApiRequest) -> Operation {
         | ApiRequest::Remote { .. }
         | ApiRequest::Transfer { .. }
         | ApiRequest::ShufflePlay { .. }
+        | ApiRequest::SmartShuffle { .. }
         | ApiRequest::AddToQueue { .. }
         | ApiRequest::AddManyToQueue { .. } => Operation::Playback,
         ApiRequest::RecentlyPlayed { .. }
@@ -6145,6 +6173,19 @@ async fn handle(
             };
             ApiResponse::Remote { action, result }
         }
+        ApiRequest::SmartShuffle {
+            device_id, play, ..
+        } => {
+            let device = device_id.as_deref();
+            let result = match routed!(set_shuffle(true, device)) {
+                Ok(()) => routed!(play(device, Some(&play))),
+                Err(error) => Err(error),
+            };
+            ApiResponse::Remote {
+                action: RemoteAction::Play,
+                result,
+            }
+        }
         ApiRequest::ShufflePlay { device_id, play } => {
             let device = device_id.as_deref();
             let result = match routed!(set_shuffle(true, device)) {
@@ -6202,11 +6243,55 @@ async fn handle(
     (response, expired.get().into_iter().collect())
 }
 
+/// What Soloist's own API cannot do, sent over the engine's session as the
+/// Connect commands Spotify's apps use: starting Spotify's DJ, which the
+/// Web API cannot, and a play with Smart Shuffle. Soloist tells Spotify it
+/// supports both. `None` leaves the request to Soloist's API and the Web API.
+async fn soloist_over_connect(
+    soloist: &crate::soloist::Client,
+    engine: &Engine,
+    request: &ApiRequest,
+) -> Option<ApiResponse> {
+    let device = soloist.device_id()?;
+    let to_soloist = |device_id: &Option<String>| device_id.as_deref() == Some(device.as_str());
+    let (action, body) = match request {
+        ApiRequest::Remote {
+            action: RemoteAction::Play,
+            device_id,
+            play: Some(play),
+            ..
+        } if to_soloist(device_id)
+            && play.context_uri.as_deref() == Some(crate::made_for_you::DJ_URI) =>
+        {
+            (
+                RemoteAction::Play,
+                crate::sonos::dj_play_body(crate::made_for_you::DJ_URI),
+            )
+        }
+        ApiRequest::SmartShuffle {
+            device_id,
+            enabled,
+            play,
+        } if to_soloist(device_id) => {
+            let mut body =
+                crate::sonos::command_body(RemoteAction::Play, Some(play), 0, false, "")?;
+            crate::sonos::with_smart_shuffle(&mut body, *enabled);
+            (RemoteAction::Play, body)
+        }
+        _ => return None,
+    };
+    Some(ApiResponse::Remote {
+        action,
+        result: crate::sonos::command(engine.session(), &device, &body).await,
+    })
+}
+
 /// The device a player command names, for those [`over_connect`] can send.
 fn command_device(request: &ApiRequest) -> Option<&str> {
     match request {
         ApiRequest::Remote { device_id, .. }
         | ApiRequest::ShufflePlay { device_id, .. }
+        | ApiRequest::SmartShuffle { device_id, .. }
         | ApiRequest::AddToQueue { device_id, .. }
         | ApiRequest::AddManyToQueue { device_id, .. } => device_id.as_deref(),
         ApiRequest::Transfer { device_id, .. } => Some(device_id),
@@ -6527,40 +6612,53 @@ fn settle<T>(result: Result<T, session_reads::Failure>) -> Option<ApiResult<T>> 
 async fn jam_request(
     engine: &Engine,
     http: Result<reqwest::Client, String>,
+    device: &str,
     request: JamRequest,
 ) -> Result<Option<crate::jam::JamSession>, crate::jam::JamError> {
     use crate::jam;
     let session = engine.session();
     match request {
-        JamRequest::Refresh => jam::current(session).await,
-        JamRequest::Start => jam::start(session).await.map(Some),
+        JamRequest::Refresh => jam::current(session, device).await,
+        JamRequest::Start => jam::start(session, device).await.map(Some),
         JamRequest::Join(link) => {
             let http = http.map_err(jam::JamError::Network)?;
             let token = jam::resolve_join_token(&http, &link).await?;
-            jam::join(session, &token).await.map(Some)
+            jam::join(session, &token, device).await.map(Some)
         }
-        JamRequest::Leave { session_id } => jam::leave(session, &session_id).await.map(|()| None),
-        JamRequest::End { session_id } => jam::end(session, &session_id).await.map(|()| None),
+        JamRequest::Leave { session_id } => jam::leave(session, &session_id, device)
+            .await
+            .map(|()| None),
+        JamRequest::End { session_id } => {
+            jam::end(session, &session_id).await?;
+            // Soloist, Spotify's own player, stays in Jam mode and Spotify
+            // opens a new Jam for it at once; leaving takes it out.
+            if let Some(again) = jam::current(session, device).await?
+                && again.is_host
+            {
+                jam::leave(session, &again.session_id, device).await?;
+            }
+            Ok(None)
+        }
         JamRequest::RemoveMember {
             session_id,
             member_id,
         } => match jam::remove_member(session, &session_id, &member_id).await? {
             Some(updated) => Ok(Some(updated)),
-            None => jam::current(session).await,
+            None => jam::current(session, device).await,
         },
         JamRequest::QueueOnly(queue_only) => {
             jam::set_queue_only(session, queue_only).await?;
-            jam::current(session).await
+            jam::current(session, device).await
         }
         JamRequest::Command {
             session_id,
             command,
         } => {
-            jam::command(session, &session_id, command).await?;
-            jam::current(session).await
+            jam::command(session, &session_id, device, command).await?;
+            jam::current(session, device).await
         }
         // answered on its own in `Worker::jam`
-        JamRequest::InviteLink { .. } => jam::current(session).await,
+        JamRequest::InviteLink { .. } => jam::current(session, device).await,
     }
 }
 

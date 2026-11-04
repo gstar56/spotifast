@@ -44,20 +44,27 @@ fn main() -> anyhow::Result<()> {
         session.connect(credentials, false).await?;
         println!("connected as {}", session.username());
 
+        // Another Connect device's id, such as Soloist's, as `--device <id>`
+        // after the action and its argument.
+        let device = std::env::args()
+            .skip_while(|arg| arg != "--device")
+            .nth(1)
+            .unwrap_or_else(|| session.device_id().to_owned());
+        let device = device.as_str();
         let required = || {
             argument
                 .clone()
                 .ok_or_else(|| anyhow::anyhow!("{action} needs an argument"))
         };
         match action.as_str() {
-            "current" => println!("{:#?}", jam::current(&session).await),
-            "start" => println!("{:#?}", jam::start(&session).await),
+            "current" => println!("{:#?}", jam::current(&session, device).await),
+            "start" => println!("{:#?}", jam::start(&session, device).await),
             // starts a Jam, asks for its invite link, and ends it again
             "invite" => {
-                if jam::current(&session).await?.is_some() {
+                if jam::current(&session, device).await?.is_some() {
                     anyhow::bail!("already in a Jam; ending it would end it for everyone");
                 }
-                let started = jam::start(&session).await?;
+                let started = jam::start(&session, device).await?;
                 let token = started.join_token.clone().unwrap_or_default();
                 match jam::invite_link(&session, &token).await {
                     Ok(link) => println!("invite link: {link}"),
@@ -70,9 +77,9 @@ fn main() -> anyhow::Result<()> {
             "join" => {
                 let client = reqwest::Client::new();
                 let token = jam::resolve_join_token(&client, &required()?).await?;
-                println!("{:#?}", jam::join(&session, &token).await);
+                println!("{:#?}", jam::join(&session, &token, device).await);
             }
-            "leave" => println!("{:?}", jam::leave(&session, &required()?).await),
+            "leave" => println!("{:?}", jam::leave(&session, &required()?, device).await),
             other => anyhow::bail!("unknown action {other}"),
         }
         anyhow::Ok(())

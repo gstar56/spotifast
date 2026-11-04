@@ -33,4 +33,8 @@ Suggestions never change the playlist itself.
   Spotify doesn't let other apps do that. When another device plays, the
   button only turns shuffle on and off. If Smart Shuffle was switched on
   there with Spotify's own app, the button still shows it.
+- With [Spotify Soloist](/soloist/) as the player, Smart Shuffle works on
+  playlists: Soloist adds the suggestions itself, and switching it restarts
+  the playing song where it is. They don't carry the sparkle in the queue.
+  On Liked Songs and albums the button offers plain shuffle there.
 - Podcasts have no Smart Shuffle.

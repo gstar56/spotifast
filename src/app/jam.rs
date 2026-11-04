@@ -239,9 +239,10 @@ impl App {
     }
 
     /// A guest's play and pause: theirs alone. Resuming catches back up with
-    /// the Jam where it is now.
+    /// the Jam where it is now. Soloist, Spotify's own player, keeps a
+    /// guest's pause to itself as Spotify's apps do, so it pauses as usual.
     pub(super) fn jam_guest_toggle(&mut self) -> bool {
-        if self.jam_guest_session().is_none() {
+        if self.jam_guest_session().is_none() || self.settings.soloist_enabled {
             return false;
         }
         let hold = self.local.playback == Playback::Playing;
